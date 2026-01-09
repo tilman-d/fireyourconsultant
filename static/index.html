@@ -708,6 +708,96 @@
             }
         }
 
+        /* File Upload */
+        .file-upload-area {
+            border: 2px dashed var(--border-subtle);
+            border-radius: 12px;
+            padding: 2rem;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background: var(--bg-elevated);
+        }
+
+        .file-upload-area:hover {
+            border-color: var(--accent-fire);
+            background: rgba(255, 107, 53, 0.05);
+        }
+
+        .file-upload-area.dragover {
+            border-color: var(--accent-fire);
+            background: rgba(255, 107, 53, 0.1);
+        }
+
+        .file-upload-icon {
+            font-size: 2.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .file-upload-text {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+        }
+
+        .file-upload-hint {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .uploaded-files {
+            margin-top: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+        }
+
+        .uploaded-file {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.75rem 1rem;
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 8px;
+            font-size: 0.875rem;
+        }
+
+        .uploaded-file-info {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            color: var(--text-primary);
+        }
+
+        .uploaded-file-icon {
+            color: var(--accent-fire);
+        }
+
+        .uploaded-file-size {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+        }
+
+        .uploaded-file-remove {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            padding: 0.25rem;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+
+        .uploaded-file-remove:hover {
+            color: #ff4d4d;
+            background: rgba(255, 77, 77, 0.1);
+        }
+
         /* Responsive */
         @media (max-width: 640px) {
             .container {
@@ -763,10 +853,10 @@
                 <div class="form-group">
                     <label class="form-label">Website URL</label>
                     <input
-                        type="url"
+                        type="text"
                         class="form-input"
                         id="companyUrl"
-                        placeholder="https://yourcompany.com"
+                        placeholder="yourcompany.com"
                         required
                     >
                 </div>
@@ -817,6 +907,23 @@
                         <span>3 slides</span>
                         <span>30 slides</span>
                     </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Additional Source Documents (Optional)</label>
+                    <div class="file-upload-area" id="fileUploadArea">
+                        <input
+                            type="file"
+                            class="file-input"
+                            id="fileInput"
+                            multiple
+                            accept=".pdf,.docx"
+                        >
+                        <div class="file-upload-icon">📄</div>
+                        <div class="file-upload-text">Drop PDF or DOCX files here, or click to browse</div>
+                        <div class="file-upload-hint">These documents will be used as additional content sources</div>
+                    </div>
+                    <div class="uploaded-files" id="uploadedFiles"></div>
                 </div>
 
                 <div class="btn-group">
@@ -932,6 +1039,10 @@
         let currentStep = 1;
         let jobId = null;
         let pollInterval = null;
+        let animationInterval = null;
+        let displayedProgress = 0;
+        let targetProgress = 0;
+        let uploadedFiles = [];
 
         function updateSlideCount(value) {
             document.getElementById('slideCountValue').textContent = value;
@@ -979,17 +1090,32 @@
             }
         }
 
+        function normalizeUrl(string) {
+            // Trim whitespace
+            let url = string.trim();
+
+            // If no protocol, add https://
+            if (!url.match(/^https?:\/\//i)) {
+                url = 'https://' + url;
+            }
+
+            return url;
+        }
+
         function isValidUrl(string) {
             try {
-                new URL(string);
-                return true;
+                const normalized = normalizeUrl(string);
+                const url = new URL(normalized);
+                // Check that it has a valid domain (at least has a dot)
+                return url.hostname.includes('.');
             } catch (_) {
                 return false;
             }
         }
 
         async function startGeneration() {
-            const companyUrl = document.getElementById('companyUrl').value;
+            const companyUrlRaw = document.getElementById('companyUrl').value;
+            const companyUrl = normalizeUrl(companyUrlRaw);
             const topic = document.getElementById('topic').value;
             const slideCount = parseInt(document.getElementById('slideCount').value);
 
@@ -1001,23 +1127,27 @@
             goToStep(3);
 
             try {
+                // Use FormData for file uploads
+                const formData = new FormData();
+                formData.append('company_url', companyUrl);
+                formData.append('topic', topic);
+                formData.append('slide_count', slideCount);
+
+                // Add uploaded files
+                for (const file of uploadedFiles) {
+                    formData.append('files', file);
+                }
+
                 const response = await fetch('/api/generate', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        company_url: companyUrl,
-                        topic: topic,
-                        slide_count: slideCount
-                    })
+                    body: formData
                 });
 
                 const data = await response.json();
                 jobId = data.job_id;
 
-                // Start polling for status
-                pollInterval = setInterval(checkStatus, 1500);
+                // Start polling for status (poll every 500ms for smoother progress)
+                pollInterval = setInterval(checkStatus, 500);
                 checkStatus();
 
             } catch (error) {
@@ -1047,13 +1177,42 @@
             }
         }
 
-        function updateProgress(data) {
-            const progress = Math.round(data.progress * 100);
+        function startProgressAnimation() {
+            // Stop any existing animation
+            if (animationInterval) {
+                clearInterval(animationInterval);
+            }
+
+            // Animate progress smoothly toward target
+            animationInterval = setInterval(() => {
+                if (displayedProgress < targetProgress) {
+                    // Increment smoothly - faster when far from target, slower when close
+                    const diff = targetProgress - displayedProgress;
+                    const increment = Math.max(0.5, diff * 0.1);
+                    displayedProgress = Math.min(targetProgress, displayedProgress + increment);
+
+                    renderProgress(displayedProgress);
+                }
+            }, 50); // Update every 50ms for smooth animation
+        }
+
+        function renderProgress(progress) {
             const circumference = 2 * Math.PI * 70;
             const offset = circumference - (progress / 100) * circumference;
 
             document.getElementById('progressCircle').style.strokeDashoffset = offset;
-            document.getElementById('progressValue').textContent = `${progress}%`;
+            document.getElementById('progressValue').textContent = `${Math.round(progress)}%`;
+        }
+
+        function updateProgress(data) {
+            // Set the target progress - animation will smoothly move toward it
+            targetProgress = Math.round(data.progress * 100);
+
+            // Start animation if not already running
+            if (!animationInterval) {
+                startProgressAnimation();
+            }
+
             document.getElementById('progressMessage').textContent = data.message || 'Processing...';
 
             // Update status text
@@ -1089,11 +1248,23 @@
         }
 
         function showSuccess(downloadUrl) {
-            document.getElementById('downloadBtn').href = downloadUrl;
-            goToStep(4);
+            // Let animation reach 100% before transitioning
+            targetProgress = 100;
+            setTimeout(() => {
+                if (animationInterval) {
+                    clearInterval(animationInterval);
+                    animationInterval = null;
+                }
+                document.getElementById('downloadBtn').href = downloadUrl;
+                goToStep(4);
+            }, 800); // Wait for animation to complete
         }
 
         function showError(message) {
+            if (animationInterval) {
+                clearInterval(animationInterval);
+                animationInterval = null;
+            }
             document.getElementById('errorMessage').textContent = message;
             goToStep('error');
         }
@@ -1107,6 +1278,10 @@
             document.getElementById('topic').value = '';
             document.getElementById('slideCount').value = 10;
             updateSlideCount(10);
+
+            // Reset uploaded files
+            uploadedFiles = [];
+            document.getElementById('uploadedFiles').innerHTML = '';
 
             // Reset progress
             resetProgress();
@@ -1126,6 +1301,15 @@
         }
 
         function resetProgress() {
+            // Stop animation
+            if (animationInterval) {
+                clearInterval(animationInterval);
+                animationInterval = null;
+            }
+            // Reset progress values
+            displayedProgress = 0;
+            targetProgress = 0;
+
             document.getElementById('progressCircle').style.strokeDashoffset = 440;
             document.getElementById('progressValue').textContent = '0%';
             document.querySelectorAll('.stage').forEach(stage => {
@@ -1138,6 +1322,74 @@
         document.getElementById('companyUrl').addEventListener('keypress', (e) => {
             if (e.key === 'Enter') nextStep();
         });
+
+        // File upload handling
+        const fileUploadArea = document.getElementById('fileUploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const uploadedFilesContainer = document.getElementById('uploadedFiles');
+
+        fileUploadArea.addEventListener('click', () => {
+            fileInput.click();
+        });
+
+        fileUploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            fileUploadArea.classList.add('dragover');
+        });
+
+        fileUploadArea.addEventListener('dragleave', () => {
+            fileUploadArea.classList.remove('dragover');
+        });
+
+        fileUploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            fileUploadArea.classList.remove('dragover');
+            handleFiles(e.dataTransfer.files);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+
+        function handleFiles(files) {
+            for (const file of files) {
+                const ext = file.name.toLowerCase().split('.').pop();
+                if (['pdf', 'docx'].includes(ext)) {
+                    if (!uploadedFiles.some(f => f.name === file.name)) {
+                        uploadedFiles.push(file);
+                    }
+                }
+            }
+            renderUploadedFiles();
+        }
+
+        function renderUploadedFiles() {
+            uploadedFilesContainer.innerHTML = uploadedFiles.map((file, index) => `
+                <div class="uploaded-file">
+                    <div class="uploaded-file-info">
+                        <span class="uploaded-file-icon">${file.name.endsWith('.pdf') ? '📕' : '📘'}</span>
+                        <span>${file.name}</span>
+                        <span class="uploaded-file-size">${formatFileSize(file.size)}</span>
+                    </div>
+                    <button class="uploaded-file-remove" onclick="removeFile(${index})" title="Remove file">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+            `).join('');
+        }
+
+        function removeFile(index) {
+            uploadedFiles.splice(index, 1);
+            renderUploadedFiles();
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        }
     </script>
 </body>
 </html>

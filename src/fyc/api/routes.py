@@ -5,7 +5,7 @@ import asyncio
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, BackgroundTasks
+from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File, Form
 from fastapi.responses import FileResponse
 
 from ..config import settings
@@ -19,6 +19,7 @@ from ..scraper.website_scraper import scrape_website
 from ..brand.analyzer import analyze_brand
 from ..content.generator import generate_content
 from ..pptx_gen.generator import generate_pptx
+from ..utils.file_extractor import extract_text_from_files
 
 router = APIRouter()
 
@@ -31,24 +32,34 @@ async def process_presentation(job_id: str, request: GenerationRequest) -> None:
     try:
         # Update status: Scraping
         jobs[job_id]["status"] = JobStatus.SCRAPING
-        jobs[job_id]["progress"] = 0.1
+        jobs[job_id]["progress"] = 0.05
         jobs[job_id]["message"] = "Scraping website for brand assets..."
 
         # Scrape the website
         scraped_data = await scrape_website(str(request.company_url))
 
+        # Scraping complete
+        jobs[job_id]["progress"] = 0.20
+        jobs[job_id]["message"] = "Website scraped successfully..."
+        await asyncio.sleep(0.1)  # Allow event loop to process status updates
+
         # Update status: Analyzing
         jobs[job_id]["status"] = JobStatus.ANALYZING
-        jobs[job_id]["progress"] = 0.3
+        jobs[job_id]["progress"] = 0.25
         jobs[job_id]["message"] = "Analyzing brand identity..."
 
         # Analyze brand
         brand_profile = await analyze_brand(scraped_data, str(request.company_url))
         jobs[job_id]["brand_profile"] = brand_profile
 
+        # Analysis complete
+        jobs[job_id]["progress"] = 0.40
+        jobs[job_id]["message"] = "Brand identity extracted..."
+        await asyncio.sleep(0.1)  # Allow event loop to process status updates
+
         # Update status: Generating
         jobs[job_id]["status"] = JobStatus.GENERATING
-        jobs[job_id]["progress"] = 0.5
+        jobs[job_id]["progress"] = 0.45
         jobs[job_id]["message"] = "Generating slide content..."
 
         # Generate content
@@ -59,17 +70,26 @@ async def process_presentation(job_id: str, request: GenerationRequest) -> None:
             additional_context=request.additional_context,
         )
 
+        # Content generation complete
+        jobs[job_id]["progress"] = 0.70
+        jobs[job_id]["message"] = "Slide content generated..."
+        await asyncio.sleep(0.1)  # Allow event loop to process status updates
+
         # Update status: Building
         jobs[job_id]["status"] = JobStatus.BUILDING
-        jobs[job_id]["progress"] = 0.8
+        jobs[job_id]["progress"] = 0.75
         jobs[job_id]["message"] = "Building PowerPoint file..."
 
-        # Generate PPTX
+        # Generate PPTX - run in executor to not block event loop
         output_dir = settings.output_dir / job_id
         output_dir.mkdir(parents=True, exist_ok=True)
         output_path = output_dir / "presentation.pptx"
 
-        generate_pptx(presentation, brand_profile, str(output_path))
+        # Run sync function in executor to allow progress updates
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(
+            None, generate_pptx, presentation, brand_profile, str(output_path)
+        )
 
         # Update status: Completed
         jobs[job_id]["status"] = JobStatus.COMPLETED
@@ -89,11 +109,33 @@ async def process_presentation(job_id: str, request: GenerationRequest) -> None:
 
 @router.post("/generate", response_model=JobResponse)
 async def generate_presentation(
-    request: GenerationRequest,
     background_tasks: BackgroundTasks,
+    company_url: str = Form(...),
+    topic: str = Form(...),
+    slide_count: int = Form(10),
+    files: list[UploadFile] = File(default=[]),
 ) -> JobResponse:
-    """Start generating a presentation."""
+    """Start generating a presentation with optional file uploads."""
     job_id = str(uuid.uuid4())[:8]
+
+    # Extract text from uploaded files
+    additional_context = ""
+    if files:
+        file_contents = []
+        for file in files:
+            if file.filename:
+                content = await file.read()
+                file_contents.append((file.filename, content))
+        if file_contents:
+            additional_context = extract_text_from_files(file_contents)
+
+    # Create request object
+    request = GenerationRequest(
+        company_url=company_url,
+        topic=topic,
+        slide_count=slide_count,
+        additional_context=additional_context if additional_context else None,
+    )
 
     # Initialize job
     jobs[job_id] = {
