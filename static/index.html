@@ -1,0 +1,1143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fire Your Consultant | AI Presentation Generator</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-deep: #0a0a0f;
+            --bg-card: #12121a;
+            --bg-elevated: #1a1a24;
+            --border-subtle: rgba(255, 255, 255, 0.06);
+            --border-glow: rgba(255, 107, 53, 0.3);
+
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255, 255, 255, 0.6);
+            --text-muted: rgba(255, 255, 255, 0.35);
+
+            --accent-fire: #ff6b35;
+            --accent-ember: #ff8c42;
+            --accent-gold: #ffd700;
+            --accent-success: #00d68f;
+
+            --gradient-fire: linear-gradient(135deg, #ff6b35 0%, #ff8c42 50%, #ffd700 100%);
+            --gradient-dark: linear-gradient(180deg, #12121a 0%, #0a0a0f 100%);
+
+            --font-display: 'Syne', sans-serif;
+            --font-mono: 'Space Mono', monospace;
+
+            --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+            --ease-out-back: cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            font-size: 16px;
+            scroll-behavior: smooth;
+        }
+
+        body {
+            font-family: var(--font-display);
+            background: var(--bg-deep);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* Animated background */
+        .bg-pattern {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 0;
+            pointer-events: none;
+            opacity: 0.4;
+        }
+
+        .bg-pattern::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background-image:
+                radial-gradient(circle at 20% 50%, rgba(255, 107, 53, 0.08) 0%, transparent 50%),
+                radial-gradient(circle at 80% 20%, rgba(255, 140, 66, 0.06) 0%, transparent 40%),
+                radial-gradient(circle at 40% 80%, rgba(255, 215, 0, 0.04) 0%, transparent 45%);
+            animation: bgPulse 20s ease-in-out infinite;
+        }
+
+        .bg-grid {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-image:
+                linear-gradient(rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+            background-size: 60px 60px;
+            mask-image: radial-gradient(ellipse 80% 50% at 50% 0%, black 40%, transparent 100%);
+        }
+
+        @keyframes bgPulse {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            33% { transform: translate(-2%, 1%) scale(1.02); }
+            66% { transform: translate(1%, -1%) scale(0.98); }
+        }
+
+        /* Main container */
+        .container {
+            position: relative;
+            z-index: 1;
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 3rem 1.5rem;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Header */
+        .header {
+            text-align: center;
+            margin-bottom: 4rem;
+            animation: fadeInUp 0.8s var(--ease-out-expo) both;
+        }
+
+        .logo {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .logo-icon {
+            width: 48px;
+            height: 48px;
+            background: var(--gradient-fire);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            box-shadow:
+                0 0 30px rgba(255, 107, 53, 0.4),
+                0 0 60px rgba(255, 107, 53, 0.2);
+            animation: logoGlow 3s ease-in-out infinite;
+        }
+
+        @keyframes logoGlow {
+            0%, 100% { box-shadow: 0 0 30px rgba(255, 107, 53, 0.4), 0 0 60px rgba(255, 107, 53, 0.2); }
+            50% { box-shadow: 0 0 40px rgba(255, 107, 53, 0.6), 0 0 80px rgba(255, 107, 53, 0.3); }
+        }
+
+        .logo-text {
+            font-size: 1.25rem;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            background: var(--gradient-fire);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header h1 {
+            font-size: clamp(2.5rem, 8vw, 4rem);
+            font-weight: 800;
+            letter-spacing: -0.03em;
+            line-height: 1.1;
+            margin-bottom: 1rem;
+        }
+
+        .header h1 span {
+            display: block;
+            background: var(--gradient-fire);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header p {
+            font-size: 1.125rem;
+            color: var(--text-secondary);
+            max-width: 480px;
+            margin: 0 auto;
+            line-height: 1.6;
+        }
+
+        /* Progress Steps */
+        .steps-indicator {
+            display: flex;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-bottom: 3rem;
+            animation: fadeInUp 0.8s var(--ease-out-expo) 0.1s both;
+        }
+
+        .step-dot {
+            width: 40px;
+            height: 4px;
+            background: var(--bg-elevated);
+            border-radius: 2px;
+            transition: all 0.5s var(--ease-out-expo);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .step-dot::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            height: 100%;
+            width: 0%;
+            background: var(--gradient-fire);
+            border-radius: 2px;
+            transition: width 0.5s var(--ease-out-expo);
+        }
+
+        .step-dot.active::after {
+            width: 100%;
+        }
+
+        .step-dot.completed::after {
+            width: 100%;
+            background: var(--accent-success);
+        }
+
+        /* Card */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-subtle);
+            border-radius: 24px;
+            padding: 2.5rem;
+            position: relative;
+            overflow: hidden;
+            animation: fadeInUp 0.8s var(--ease-out-expo) 0.2s both;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, rgba(255, 107, 53, 0.5), transparent);
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        .card:hover::before {
+            opacity: 1;
+        }
+
+        /* Form Steps */
+        .wizard-step {
+            display: none;
+            animation: stepIn 0.6s var(--ease-out-expo) both;
+        }
+
+        .wizard-step.active {
+            display: block;
+        }
+
+        @keyframes stepIn {
+            from {
+                opacity: 0;
+                transform: translateX(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        @keyframes stepOut {
+            from {
+                opacity: 1;
+                transform: translateX(0);
+            }
+            to {
+                opacity: 0;
+                transform: translateX(-20px);
+            }
+        }
+
+        .step-header {
+            margin-bottom: 2rem;
+        }
+
+        .step-number {
+            font-family: var(--font-mono);
+            font-size: 0.75rem;
+            color: var(--accent-fire);
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            margin-bottom: 0.5rem;
+        }
+
+        .step-title {
+            font-size: 1.75rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+        }
+
+        .step-description {
+            color: var(--text-secondary);
+            margin-top: 0.5rem;
+            line-height: 1.6;
+        }
+
+        /* Form Elements */
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+
+        .form-label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 600;
+            margin-bottom: 0.75rem;
+            color: var(--text-secondary);
+        }
+
+        .form-input {
+            width: 100%;
+            padding: 1rem 1.25rem;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            color: var(--text-primary);
+            font-family: var(--font-display);
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+
+        .form-input::placeholder {
+            color: var(--text-muted);
+        }
+
+        .form-input:focus {
+            outline: none;
+            border-color: var(--accent-fire);
+            box-shadow: 0 0 0 4px rgba(255, 107, 53, 0.1);
+        }
+
+        .form-input:hover:not(:focus) {
+            border-color: rgba(255, 255, 255, 0.15);
+        }
+
+        textarea.form-input {
+            min-height: 120px;
+            resize: vertical;
+            line-height: 1.6;
+        }
+
+        /* Slider */
+        .slider-container {
+            position: relative;
+        }
+
+        .slider-value {
+            position: absolute;
+            right: 0;
+            top: 0;
+            font-family: var(--font-mono);
+            font-size: 0.875rem;
+            color: var(--accent-fire);
+            font-weight: 700;
+        }
+
+        .form-slider {
+            width: 100%;
+            height: 8px;
+            background: var(--bg-elevated);
+            border-radius: 4px;
+            -webkit-appearance: none;
+            appearance: none;
+            cursor: pointer;
+            margin-top: 0.5rem;
+        }
+
+        .form-slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 24px;
+            height: 24px;
+            background: var(--gradient-fire);
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 0 20px rgba(255, 107, 53, 0.5);
+            transition: transform 0.2s ease;
+        }
+
+        .form-slider::-webkit-slider-thumb:hover {
+            transform: scale(1.1);
+        }
+
+        .form-slider::-moz-range-thumb {
+            width: 24px;
+            height: 24px;
+            background: var(--gradient-fire);
+            border-radius: 50%;
+            cursor: pointer;
+            border: none;
+            box-shadow: 0 0 20px rgba(255, 107, 53, 0.5);
+        }
+
+        .slider-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 0.5rem;
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-family: var(--font-mono);
+        }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            padding: 1rem 2rem;
+            border: none;
+            border-radius: 12px;
+            font-family: var(--font-display);
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s var(--ease-out-expo);
+            text-decoration: none;
+        }
+
+        .btn-primary {
+            background: var(--gradient-fire);
+            color: #000;
+            box-shadow:
+                0 4px 20px rgba(255, 107, 53, 0.4),
+                0 0 60px rgba(255, 107, 53, 0.2);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow:
+                0 8px 30px rgba(255, 107, 53, 0.5),
+                0 0 80px rgba(255, 107, 53, 0.3);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+
+        .btn-secondary {
+            background: var(--bg-elevated);
+            color: var(--text-primary);
+            border: 1px solid var(--border-subtle);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-group {
+            display: flex;
+            gap: 1rem;
+            margin-top: 2rem;
+        }
+
+        .btn-group .btn {
+            flex: 1;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        /* Progress State */
+        .progress-container {
+            text-align: center;
+            padding: 2rem 0;
+        }
+
+        .progress-ring {
+            width: 160px;
+            height: 160px;
+            margin: 0 auto 2rem;
+            position: relative;
+        }
+
+        .progress-ring svg {
+            transform: rotate(-90deg);
+            width: 100%;
+            height: 100%;
+        }
+
+        .progress-ring-bg {
+            fill: none;
+            stroke: var(--bg-elevated);
+            stroke-width: 8;
+        }
+
+        .progress-ring-fill {
+            fill: none;
+            stroke: url(#fireGradient);
+            stroke-width: 8;
+            stroke-linecap: round;
+            stroke-dasharray: 440;
+            stroke-dashoffset: 440;
+            transition: stroke-dashoffset 0.5s var(--ease-out-expo);
+        }
+
+        .progress-value {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-family: var(--font-mono);
+            font-size: 2rem;
+            font-weight: 700;
+            background: var(--gradient-fire);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .progress-status {
+            font-size: 1.25rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+
+        .progress-message {
+            color: var(--text-secondary);
+            margin-bottom: 2rem;
+        }
+
+        .progress-stages {
+            display: flex;
+            flex-direction: column;
+            gap: 0.75rem;
+            text-align: left;
+            max-width: 320px;
+            margin: 0 auto;
+        }
+
+        .stage {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.75rem 1rem;
+            background: var(--bg-elevated);
+            border-radius: 8px;
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            transition: all 0.3s ease;
+        }
+
+        .stage.active {
+            color: var(--text-primary);
+            background: rgba(255, 107, 53, 0.1);
+            border: 1px solid rgba(255, 107, 53, 0.2);
+        }
+
+        .stage.completed {
+            color: var(--accent-success);
+        }
+
+        .stage-icon {
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .stage.active .stage-icon {
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        /* Success State */
+        .success-container {
+            text-align: center;
+            padding: 2rem 0;
+        }
+
+        .success-icon {
+            width: 100px;
+            height: 100px;
+            margin: 0 auto 2rem;
+            background: linear-gradient(135deg, rgba(0, 214, 143, 0.2), rgba(0, 214, 143, 0.05));
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 3rem;
+            animation: successPop 0.6s var(--ease-out-back) both;
+        }
+
+        @keyframes successPop {
+            0% {
+                transform: scale(0);
+                opacity: 0;
+            }
+            100% {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .success-title {
+            font-size: 2rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+        }
+
+        .success-message {
+            color: var(--text-secondary);
+            margin-bottom: 2rem;
+            line-height: 1.6;
+        }
+
+        .download-btn {
+            width: 100%;
+            padding: 1.25rem 2rem;
+            font-size: 1.125rem;
+        }
+
+        .download-btn svg {
+            width: 24px;
+            height: 24px;
+        }
+
+        .restart-link {
+            display: inline-block;
+            margin-top: 1.5rem;
+            color: var(--text-secondary);
+            text-decoration: none;
+            font-size: 0.875rem;
+            transition: color 0.3s ease;
+        }
+
+        .restart-link:hover {
+            color: var(--accent-fire);
+        }
+
+        /* Error State */
+        .error-container {
+            text-align: center;
+            padding: 2rem 0;
+        }
+
+        .error-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 1.5rem;
+            background: rgba(255, 77, 77, 0.1);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2.5rem;
+        }
+
+        .error-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: #ff4d4d;
+            margin-bottom: 0.5rem;
+        }
+
+        .error-message {
+            color: var(--text-secondary);
+            margin-bottom: 2rem;
+            line-height: 1.6;
+        }
+
+        /* Footer */
+        .footer {
+            margin-top: auto;
+            padding-top: 3rem;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            animation: fadeInUp 0.8s var(--ease-out-expo) 0.3s both;
+        }
+
+        .footer a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            transition: color 0.3s ease;
+        }
+
+        .footer a:hover {
+            color: var(--accent-fire);
+        }
+
+        /* Animations */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* Responsive */
+        @media (max-width: 640px) {
+            .container {
+                padding: 2rem 1rem;
+            }
+
+            .card {
+                padding: 1.5rem;
+                border-radius: 16px;
+            }
+
+            .btn-group {
+                flex-direction: column;
+            }
+
+            .header h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="bg-pattern">
+        <div class="bg-grid"></div>
+    </div>
+
+    <div class="container">
+        <header class="header">
+            <div class="logo">
+                <div class="logo-icon">🔥</div>
+                <span class="logo-text">FIREYOURCONSULTANT.AI</span>
+            </div>
+            <h1>Create Stunning<br><span>Presentations</span></h1>
+            <p>Generate professional PowerPoint slides in your company's brand style. Just enter your website and topic.</p>
+        </header>
+
+        <div class="steps-indicator">
+            <div class="step-dot active" data-step="1"></div>
+            <div class="step-dot" data-step="2"></div>
+            <div class="step-dot" data-step="3"></div>
+            <div class="step-dot" data-step="4"></div>
+        </div>
+
+        <div class="card">
+            <!-- Step 1: Company URL -->
+            <div class="wizard-step active" data-step="1">
+                <div class="step-header">
+                    <div class="step-number">Step 01</div>
+                    <h2 class="step-title">Your Company Website</h2>
+                    <p class="step-description">We'll extract your brand colors, fonts, logo, and writing style automatically.</p>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Website URL</label>
+                    <input
+                        type="url"
+                        class="form-input"
+                        id="companyUrl"
+                        placeholder="https://yourcompany.com"
+                        required
+                    >
+                </div>
+
+                <div class="btn-group">
+                    <button class="btn btn-primary" onclick="nextStep()" id="step1Next">
+                        Continue
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M5 12h14M12 5l7 7-7 7"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 2: Topic & Slides -->
+            <div class="wizard-step" data-step="2">
+                <div class="step-header">
+                    <div class="step-number">Step 02</div>
+                    <h2 class="step-title">Presentation Details</h2>
+                    <p class="step-description">Tell us what your presentation should be about.</p>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Topic or Content</label>
+                    <textarea
+                        class="form-input"
+                        id="topic"
+                        placeholder="e.g., Q4 Sales Strategy for the DACH region, focusing on enterprise clients and our new product features..."
+                        required
+                    ></textarea>
+                </div>
+
+                <div class="form-group">
+                    <div class="slider-container">
+                        <label class="form-label">Number of Slides</label>
+                        <span class="slider-value" id="slideCountValue">10</span>
+                    </div>
+                    <input
+                        type="range"
+                        class="form-slider"
+                        id="slideCount"
+                        min="3"
+                        max="30"
+                        value="10"
+                        oninput="updateSlideCount(this.value)"
+                    >
+                    <div class="slider-labels">
+                        <span>3 slides</span>
+                        <span>30 slides</span>
+                    </div>
+                </div>
+
+                <div class="btn-group">
+                    <button class="btn btn-secondary" onclick="prevStep()">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 12H5M12 19l-7-7 7-7"/>
+                        </svg>
+                        Back
+                    </button>
+                    <button class="btn btn-primary" onclick="startGeneration()">
+                        Generate Presentation
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Step 3: Progress -->
+            <div class="wizard-step" data-step="3">
+                <div class="progress-container">
+                    <div class="progress-ring">
+                        <svg viewBox="0 0 160 160">
+                            <defs>
+                                <linearGradient id="fireGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                    <stop offset="0%" stop-color="#ff6b35"/>
+                                    <stop offset="50%" stop-color="#ff8c42"/>
+                                    <stop offset="100%" stop-color="#ffd700"/>
+                                </linearGradient>
+                            </defs>
+                            <circle class="progress-ring-bg" cx="80" cy="80" r="70"/>
+                            <circle class="progress-ring-fill" cx="80" cy="80" r="70" id="progressCircle"/>
+                        </svg>
+                        <div class="progress-value" id="progressValue">0%</div>
+                    </div>
+
+                    <h3 class="progress-status" id="progressStatus">Initializing...</h3>
+                    <p class="progress-message" id="progressMessage">Please wait while we create your presentation</p>
+
+                    <div class="progress-stages">
+                        <div class="stage" data-stage="scraping">
+                            <span class="stage-icon">○</span>
+                            <span>Analyzing your website</span>
+                        </div>
+                        <div class="stage" data-stage="analyzing">
+                            <span class="stage-icon">○</span>
+                            <span>Extracting brand identity</span>
+                        </div>
+                        <div class="stage" data-stage="generating">
+                            <span class="stage-icon">○</span>
+                            <span>Generating slide content</span>
+                        </div>
+                        <div class="stage" data-stage="building">
+                            <span class="stage-icon">○</span>
+                            <span>Building PowerPoint file</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 4: Success -->
+            <div class="wizard-step" data-step="4">
+                <div class="success-container">
+                    <div class="success-icon">✓</div>
+                    <h3 class="success-title">Presentation Ready!</h3>
+                    <p class="success-message">Your professional presentation has been generated with your brand's colors, fonts, and voice.</p>
+
+                    <a class="btn btn-primary download-btn" id="downloadBtn" href="#" download>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M7 10l5 5 5-5M12 15V3"/>
+                        </svg>
+                        Download Presentation
+                    </a>
+
+                    <div class="btn-group" style="margin-top: 1.5rem;">
+                        <button class="btn btn-secondary" onclick="regenerate()">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M1 4v6h6M23 20v-6h-6"/>
+                                <path d="M20.49 9A9 9 0 0 0 5.64 5.64L1 10m22 4l-4.64 4.36A9 9 0 0 1 3.51 15"/>
+                            </svg>
+                            Regenerate
+                        </button>
+                        <button class="btn btn-secondary" onclick="restart()">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 5v14M5 12h14"/>
+                            </svg>
+                            New Topic
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Error State -->
+            <div class="wizard-step" data-step="error">
+                <div class="error-container">
+                    <div class="error-icon">✕</div>
+                    <h3 class="error-title">Generation Failed</h3>
+                    <p class="error-message" id="errorMessage">Something went wrong. Please try again.</p>
+
+                    <button class="btn btn-primary" onclick="restart()">
+                        Try Again
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <footer class="footer">
+            <p>Powered by Claude AI • Built with 🔥</p>
+        </footer>
+    </div>
+
+    <script>
+        let currentStep = 1;
+        let jobId = null;
+        let pollInterval = null;
+
+        function updateSlideCount(value) {
+            document.getElementById('slideCountValue').textContent = value;
+        }
+
+        function goToStep(step) {
+            // Update step dots
+            document.querySelectorAll('.step-dot').forEach((dot, index) => {
+                dot.classList.remove('active', 'completed');
+                if (index + 1 < step) {
+                    dot.classList.add('completed');
+                } else if (index + 1 === step) {
+                    dot.classList.add('active');
+                }
+            });
+
+            // Update wizard steps
+            document.querySelectorAll('.wizard-step').forEach(s => {
+                s.classList.remove('active');
+            });
+
+            const targetStep = document.querySelector(`.wizard-step[data-step="${step}"]`);
+            if (targetStep) {
+                targetStep.classList.add('active');
+            }
+
+            currentStep = step;
+        }
+
+        function nextStep() {
+            // Validate current step
+            if (currentStep === 1) {
+                const url = document.getElementById('companyUrl').value;
+                if (!url || !isValidUrl(url)) {
+                    document.getElementById('companyUrl').focus();
+                    return;
+                }
+            }
+            goToStep(currentStep + 1);
+        }
+
+        function prevStep() {
+            if (currentStep > 1) {
+                goToStep(currentStep - 1);
+            }
+        }
+
+        function isValidUrl(string) {
+            try {
+                new URL(string);
+                return true;
+            } catch (_) {
+                return false;
+            }
+        }
+
+        async function startGeneration() {
+            const companyUrl = document.getElementById('companyUrl').value;
+            const topic = document.getElementById('topic').value;
+            const slideCount = parseInt(document.getElementById('slideCount').value);
+
+            if (!topic) {
+                document.getElementById('topic').focus();
+                return;
+            }
+
+            goToStep(3);
+
+            try {
+                const response = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        company_url: companyUrl,
+                        topic: topic,
+                        slide_count: slideCount
+                    })
+                });
+
+                const data = await response.json();
+                jobId = data.job_id;
+
+                // Start polling for status
+                pollInterval = setInterval(checkStatus, 1500);
+                checkStatus();
+
+            } catch (error) {
+                showError('Failed to start generation. Please try again.');
+            }
+        }
+
+        async function checkStatus() {
+            if (!jobId) return;
+
+            try {
+                const response = await fetch(`/api/job/${jobId}`);
+                const data = await response.json();
+
+                updateProgress(data);
+
+                if (data.status === 'completed') {
+                    clearInterval(pollInterval);
+                    showSuccess(data.download_url);
+                } else if (data.status === 'failed') {
+                    clearInterval(pollInterval);
+                    showError(data.error || 'Generation failed. Please try again.');
+                }
+
+            } catch (error) {
+                console.error('Status check error:', error);
+            }
+        }
+
+        function updateProgress(data) {
+            const progress = Math.round(data.progress * 100);
+            const circumference = 2 * Math.PI * 70;
+            const offset = circumference - (progress / 100) * circumference;
+
+            document.getElementById('progressCircle').style.strokeDashoffset = offset;
+            document.getElementById('progressValue').textContent = `${progress}%`;
+            document.getElementById('progressMessage').textContent = data.message || 'Processing...';
+
+            // Update status text
+            const statusTexts = {
+                'pending': 'Initializing...',
+                'scraping': 'Analyzing Website...',
+                'analyzing': 'Extracting Brand...',
+                'generating': 'Creating Content...',
+                'building': 'Building Presentation...'
+            };
+            document.getElementById('progressStatus').textContent = statusTexts[data.status] || 'Processing...';
+
+            // Update stage indicators
+            const stages = ['scraping', 'analyzing', 'generating', 'building'];
+            const currentStageIndex = stages.indexOf(data.status);
+
+            document.querySelectorAll('.stage').forEach((stage, index) => {
+                const stageName = stage.dataset.stage;
+                const stageIndex = stages.indexOf(stageName);
+
+                stage.classList.remove('active', 'completed');
+
+                if (stageIndex < currentStageIndex) {
+                    stage.classList.add('completed');
+                    stage.querySelector('.stage-icon').textContent = '✓';
+                } else if (stageIndex === currentStageIndex) {
+                    stage.classList.add('active');
+                    stage.querySelector('.stage-icon').textContent = '◌';
+                } else {
+                    stage.querySelector('.stage-icon').textContent = '○';
+                }
+            });
+        }
+
+        function showSuccess(downloadUrl) {
+            document.getElementById('downloadBtn').href = downloadUrl;
+            goToStep(4);
+        }
+
+        function showError(message) {
+            document.getElementById('errorMessage').textContent = message;
+            goToStep('error');
+        }
+
+        function restart() {
+            jobId = null;
+            if (pollInterval) clearInterval(pollInterval);
+
+            // Reset form
+            document.getElementById('companyUrl').value = '';
+            document.getElementById('topic').value = '';
+            document.getElementById('slideCount').value = 10;
+            updateSlideCount(10);
+
+            // Reset progress
+            resetProgress();
+
+            goToStep(1);
+        }
+
+        function regenerate() {
+            jobId = null;
+            if (pollInterval) clearInterval(pollInterval);
+
+            // Keep form values but reset progress
+            resetProgress();
+
+            // Start generation again
+            startGeneration();
+        }
+
+        function resetProgress() {
+            document.getElementById('progressCircle').style.strokeDashoffset = 440;
+            document.getElementById('progressValue').textContent = '0%';
+            document.querySelectorAll('.stage').forEach(stage => {
+                stage.classList.remove('active', 'completed');
+                stage.querySelector('.stage-icon').textContent = '○';
+            });
+        }
+
+        // Enter key to continue
+        document.getElementById('companyUrl').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') nextStep();
+        });
+    </script>
+</body>
+</html>
