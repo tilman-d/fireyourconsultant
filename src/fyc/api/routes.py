@@ -14,6 +14,8 @@ from ..models import (
     JobResponse,
     JobStatus,
     BrandProfile,
+    ScrapedImage,
+    ImageCategory,
 )
 from ..scraper.website_scraper import scrape_website
 from ..brand.analyzer import analyze_brand
@@ -50,6 +52,13 @@ async def process_presentation(job_id: str, request: GenerationRequest) -> None:
 
         # Analyze brand
         brand_profile = await analyze_brand(scraped_data, str(request.company_url))
+
+        # Add user-uploaded images to the brand profile (prioritize them)
+        uploaded_images = jobs[job_id].get("uploaded_images", [])
+        if uploaded_images:
+            # Prepend uploaded images so they are used first
+            brand_profile.images = uploaded_images + brand_profile.images
+
         jobs[job_id]["brand_profile"] = brand_profile
 
         # Analysis complete
@@ -118,23 +127,52 @@ async def generate_presentation(
     """Start generating a presentation with optional file uploads."""
     job_id = str(uuid.uuid4())[:8]
 
-    # Extract text from uploaded files
-    additional_context = ""
+    # Separate document files from image files
+    image_extensions = {'.jpg', '.jpeg', '.png', '.gif', '.webp'}
+    document_extensions = {'.pdf', '.docx'}
+
+    document_contents = []
+    uploaded_images: list[ScrapedImage] = []
+
+    # Create job output directory for saving images
+    output_dir = settings.output_dir / job_id
+    output_dir.mkdir(parents=True, exist_ok=True)
+
     if files:
-        file_contents = []
         for file in files:
             if file.filename:
+                ext = Path(file.filename).suffix.lower()
                 content = await file.read()
-                file_contents.append((file.filename, content))
-        if file_contents:
-            additional_context = extract_text_from_files(file_contents)
+
+                if ext in document_extensions:
+                    document_contents.append((file.filename, content))
+                elif ext in image_extensions:
+                    # Save image to job directory
+                    image_path = output_dir / file.filename
+                    with open(image_path, 'wb') as f:
+                        f.write(content)
+
+                    # Create ScrapedImage object for the uploaded image
+                    uploaded_images.append(ScrapedImage(
+                        url=f"uploaded://{file.filename}",
+                        alt_text=f"User uploaded: {file.filename}",
+                        local_path=str(image_path),
+                        category=ImageCategory.USER_UPLOAD,
+                        description=f"User-uploaded image: {file.filename}",
+                        relevance_score=1.0,  # High relevance for user uploads
+                    ))
+
+    # Extract text from document files
+    additional_context = ""
+    if document_contents:
+        additional_context = extract_text_from_files(document_contents)
 
     # Create request object
     request = GenerationRequest(
         company_url=company_url,
         topic=topic,
         slide_count=slide_count,
-        additional_context=additional_context if additional_context else None,
+        additional_context=additional_context or "",
     )
 
     # Initialize job
@@ -145,6 +183,7 @@ async def generate_presentation(
         "brand_profile": None,
         "download_url": None,
         "error": None,
+        "uploaded_images": uploaded_images,  # Store uploaded images for later use
     }
 
     # Start background processing

@@ -15,6 +15,7 @@ class ImageCategory(str, Enum):
     HERO = "hero"
     CUSTOMER = "customer"
     DATA = "data"
+    USER_UPLOAD = "user_upload"
     UNKNOWN = "unknown"
 
 

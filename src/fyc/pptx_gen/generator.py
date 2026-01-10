@@ -1032,7 +1032,15 @@ class PptxGenerator:
             print(f"Error adding image: {e}")
 
     def _get_image_for_category(self, category: Optional[ImageCategory]) -> Optional[ScrapedImage]:
-        """Get an unused image for the category."""
+        """Get an unused image for the category, prioritizing user uploads."""
+        # Always try user-uploaded images first (highest priority)
+        if ImageCategory.USER_UPLOAD in self.images_by_category:
+            for img in self.images_by_category[ImageCategory.USER_UPLOAD]:
+                if img.local_path and img.local_path not in self.used_images:
+                    if not img.local_path.endswith('.svg'):
+                        self.used_images.add(img.local_path)
+                        return img
+
         if not category:
             # Try to get any good image
             for cat in [ImageCategory.HERO, ImageCategory.PRODUCT, ImageCategory.TEAM, ImageCategory.OFFICE]:
@@ -1052,7 +1060,13 @@ class PptxGenerator:
                     self.used_images.add(img.local_path)
                     return img
 
-        # Reuse if needed
+        # Reuse user uploads before other images
+        if ImageCategory.USER_UPLOAD in self.images_by_category:
+            for img in self.images_by_category[ImageCategory.USER_UPLOAD]:
+                if img.local_path and not img.local_path.endswith('.svg'):
+                    return img
+
+        # Reuse other images if needed
         for img in images:
             if img.local_path and not img.local_path.endswith('.svg'):
                 return img

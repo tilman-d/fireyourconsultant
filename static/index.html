@@ -910,18 +910,18 @@
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Additional Source Documents (Optional)</label>
+                    <label class="form-label">Additional Source Files (Optional)</label>
                     <div class="file-upload-area" id="fileUploadArea">
                         <input
                             type="file"
                             class="file-input"
                             id="fileInput"
                             multiple
-                            accept=".pdf,.docx"
+                            accept=".pdf,.docx,.jpg,.jpeg,.png,.gif,.webp"
                         >
                         <div class="file-upload-icon">📄</div>
-                        <div class="file-upload-text">Drop PDF or DOCX files here, or click to browse</div>
-                        <div class="file-upload-hint">These documents will be used as additional content sources</div>
+                        <div class="file-upload-text">Drop documents or images here, or click to browse</div>
+                        <div class="file-upload-hint">Documents (PDF, DOCX) for content sources. Images (JPG, PNG, etc.) will be included in slides.</div>
                     </div>
                     <div class="uploaded-files" id="uploadedFiles"></div>
                 </div>
@@ -1352,9 +1352,10 @@
         });
 
         function handleFiles(files) {
+            const allowedExtensions = ['pdf', 'docx', 'jpg', 'jpeg', 'png', 'gif', 'webp'];
             for (const file of files) {
                 const ext = file.name.toLowerCase().split('.').pop();
-                if (['pdf', 'docx'].includes(ext)) {
+                if (allowedExtensions.includes(ext)) {
                     if (!uploadedFiles.some(f => f.name === file.name)) {
                         uploadedFiles.push(file);
                     }
@@ -1363,11 +1364,19 @@
             renderUploadedFiles();
         }
 
+        function getFileIcon(filename) {
+            const ext = filename.toLowerCase().split('.').pop();
+            if (ext === 'pdf') return '📕';
+            if (ext === 'docx') return '📘';
+            if (['jpg', 'jpeg', 'png', 'gif', 'webp'].includes(ext)) return '🖼️';
+            return '📄';
+        }
+
         function renderUploadedFiles() {
             uploadedFilesContainer.innerHTML = uploadedFiles.map((file, index) => `
                 <div class="uploaded-file">
                     <div class="uploaded-file-info">
-                        <span class="uploaded-file-icon">${file.name.endsWith('.pdf') ? '📕' : '📘'}</span>
+                        <span class="uploaded-file-icon">${getFileIcon(file.name)}</span>
                         <span>${file.name}</span>
                         <span class="uploaded-file-size">${formatFileSize(file.size)}</span>
                     </div>
