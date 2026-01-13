@@ -16,6 +16,7 @@ from ..models import (
     BrandVoice,
     ScrapedImage,
     ImageCategory,
+    TemplateProfile,
 )
 
 
@@ -393,6 +394,86 @@ Return ONLY valid JSON with the company name (just the name, not "Inc" or "Compa
                 return img.local_path
 
         return None
+
+    def _get_colors_from_template(self, template_profile: TemplateProfile) -> BrandColors:
+        """Extract best colors from template, preferring extracted palette over theme.
+
+        Priority order:
+        1. Extracted palette (actual colors from shapes) - most accurate
+        2. Theme colors (from theme XML) - fallback
+        """
+        palette = template_profile.extracted_palette
+        theme = template_profile.theme_colors
+
+        # Use extracted palette colors when available, fall back to theme
+        primary = palette.primary or theme.accent1
+        secondary = palette.secondary or theme.accent2
+        accent = palette.accent or theme.accent3
+        background = palette.background or theme.lt1
+        text = palette.text or theme.dk1
+        text_light = theme.dk2  # Usually keep from theme
+
+        return BrandColors(
+            primary=primary,
+            secondary=secondary,
+            accent=accent,
+            background=background,
+            text=text,
+            text_light=text_light,
+        )
+
+    def merge_with_template(
+        self,
+        brand_profile: BrandProfile,
+        template_profile: TemplateProfile,
+    ) -> BrandProfile:
+        """Merge website brand profile with PPTX template styles.
+
+        Template styles take priority for colors and fonts.
+        Website provides voice, images, and company info.
+        """
+        # Get colors from template (prefers extracted palette over theme)
+        brand_profile.colors = self._get_colors_from_template(template_profile)
+
+        # Map theme fonts to brand fonts (template takes priority)
+        fonts = template_profile.theme_fonts
+        brand_profile.fonts = BrandFonts(
+            heading=fonts.major_latin,
+            body=fonts.minor_latin,
+            heading_fallback="Arial",
+            body_fallback="Calibri",
+        )
+
+        # Store full template profile for generator access
+        brand_profile.template_profile = template_profile
+
+        return brand_profile
+
+    def create_profile_from_template(
+        self,
+        template_profile: TemplateProfile,
+        company_name: str = "",
+    ) -> BrandProfile:
+        """Create a brand profile purely from PPTX template (no website).
+
+        Used when user only provides a template without a website URL.
+        """
+        fonts = template_profile.theme_fonts
+
+        return BrandProfile(
+            company_name=company_name,
+            tagline="",
+            language="en",
+            colors=self._get_colors_from_template(template_profile),
+            fonts=BrandFonts(
+                heading=fonts.major_latin,
+                body=fonts.minor_latin,
+                heading_fallback="Arial",
+                body_fallback="Calibri",
+            ),
+            voice=BrandVoice(),  # Default voice when no website
+            template_profile=template_profile,
+        )
 
 
 async def analyze_brand(scraped_data: dict, url: str = "") -> BrandProfile:

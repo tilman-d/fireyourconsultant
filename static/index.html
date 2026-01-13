@@ -798,6 +798,56 @@
             background: rgba(255, 77, 77, 0.1);
         }
 
+        /* Divider with text */
+        .divider-text {
+            display: flex;
+            align-items: center;
+            text-align: center;
+            margin: 1.5rem 0;
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            font-weight: 600;
+        }
+
+        .divider-text::before,
+        .divider-text::after {
+            content: '';
+            flex: 1;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .divider-text span {
+            padding: 0 1rem;
+        }
+
+        /* Template upload styling */
+        .template-upload {
+            border-color: var(--accent-ember);
+        }
+
+        .template-upload:hover {
+            border-color: var(--accent-fire);
+            background: rgba(255, 140, 66, 0.05);
+        }
+
+        /* Priority info note */
+        .priority-note {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 1rem;
+            background: rgba(255, 140, 66, 0.1);
+            border: 1px solid rgba(255, 140, 66, 0.2);
+            border-radius: 8px;
+            font-size: 0.875rem;
+            color: var(--accent-ember);
+            margin-top: 1rem;
+        }
+
+        .priority-note .priority-icon {
+            flex-shrink: 0;
+        }
+
         /* Responsive */
         @media (max-width: 640px) {
             .container {
@@ -842,27 +892,51 @@
         </div>
 
         <div class="card">
-            <!-- Step 1: Company URL -->
+            <!-- Step 1: Brand Source -->
             <div class="wizard-step active" data-step="1">
                 <div class="step-header">
                     <div class="step-number">Step 01</div>
-                    <h2 class="step-title">Your Company Website</h2>
-                    <p class="step-description">We'll extract your brand colors, fonts, logo, and writing style automatically.</p>
+                    <h2 class="step-title">Brand Source</h2>
+                    <p class="step-description">Provide your company website URL, upload a PowerPoint template, or both. We'll extract brand styling from your source.</p>
                 </div>
 
                 <div class="form-group">
-                    <label class="form-label">Website URL</label>
+                    <label class="form-label">Website URL (optional if template provided)</label>
                     <input
                         type="text"
                         class="form-input"
                         id="companyUrl"
                         placeholder="yourcompany.com"
-                        required
                     >
                 </div>
 
+                <div class="divider-text">
+                    <span>OR</span>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">PowerPoint Style Template (optional if URL provided)</label>
+                    <div class="file-upload-area template-upload" id="templateUploadArea">
+                        <input
+                            type="file"
+                            class="file-input"
+                            id="templateInput"
+                            accept=".pptx,.ppt"
+                        >
+                        <div class="file-upload-icon">📊</div>
+                        <div class="file-upload-text">Drop PPTX template here, or click to browse</div>
+                        <div class="file-upload-hint">We'll extract colors, fonts, and layouts from your template</div>
+                    </div>
+                    <div id="templateFileDisplay" class="uploaded-files"></div>
+                </div>
+
+                <div class="priority-note" id="priorityNote" style="display: none;">
+                    <div class="priority-icon">ℹ️</div>
+                    <div class="priority-text">Template styles will take priority over website styles when both are provided.</div>
+                </div>
+
                 <div class="btn-group">
-                    <button class="btn btn-primary" onclick="nextStep()" id="step1Next">
+                    <button class="btn btn-primary" onclick="nextStep()" id="step1Next" disabled>
                         Continue
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M5 12h14M12 5l7 7-7 7"/>
@@ -1043,6 +1117,7 @@
         let displayedProgress = 0;
         let targetProgress = 0;
         let uploadedFiles = [];
+        let templateFile = null;
 
         function updateSlideCount(value) {
             document.getElementById('slideCountValue').textContent = value;
@@ -1076,7 +1151,11 @@
             // Validate current step
             if (currentStep === 1) {
                 const url = document.getElementById('companyUrl').value;
-                if (!url || !isValidUrl(url)) {
+                const hasValidUrl = url && isValidUrl(url);
+                const hasTemplate = templateFile !== null;
+
+                // At least one source must be provided
+                if (!hasValidUrl && !hasTemplate) {
                     document.getElementById('companyUrl').focus();
                     return;
                 }
@@ -1115,7 +1194,6 @@
 
         async function startGeneration() {
             const companyUrlRaw = document.getElementById('companyUrl').value;
-            const companyUrl = normalizeUrl(companyUrlRaw);
             const topic = document.getElementById('topic').value;
             const slideCount = parseInt(document.getElementById('slideCount').value);
 
@@ -1129,11 +1207,22 @@
             try {
                 // Use FormData for file uploads
                 const formData = new FormData();
-                formData.append('company_url', companyUrl);
+
+                // URL is now optional - only include if valid
+                if (companyUrlRaw && isValidUrl(companyUrlRaw)) {
+                    const companyUrl = normalizeUrl(companyUrlRaw);
+                    formData.append('company_url', companyUrl);
+                }
+
                 formData.append('topic', topic);
                 formData.append('slide_count', slideCount);
 
-                // Add uploaded files
+                // Add template file if provided
+                if (templateFile) {
+                    formData.append('template_file', templateFile);
+                }
+
+                // Add uploaded content files
                 for (const file of uploadedFiles) {
                     formData.append('files', file);
                 }
@@ -1143,6 +1232,11 @@
                     body: formData
                 });
 
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Failed to start generation');
+                }
+
                 const data = await response.json();
                 jobId = data.job_id;
 
@@ -1151,7 +1245,7 @@
                 checkStatus();
 
             } catch (error) {
-                showError('Failed to start generation. Please try again.');
+                showError(error.message || 'Failed to start generation. Please try again.');
             }
         }
 
@@ -1283,6 +1377,13 @@
             uploadedFiles = [];
             document.getElementById('uploadedFiles').innerHTML = '';
 
+            // Reset template file
+            templateFile = null;
+            document.getElementById('templateInput').value = '';
+            document.getElementById('templateFileDisplay').innerHTML = '';
+            document.getElementById('priorityNote').style.display = 'none';
+            document.getElementById('step1Next').disabled = true;
+
             // Reset progress
             resetProgress();
 
@@ -1317,11 +1418,6 @@
                 stage.querySelector('.stage-icon').textContent = '○';
             });
         }
-
-        // Enter key to continue
-        document.getElementById('companyUrl').addEventListener('keypress', (e) => {
-            if (e.key === 'Enter') nextStep();
-        });
 
         // File upload handling
         const fileUploadArea = document.getElementById('fileUploadArea');
@@ -1399,6 +1495,105 @@
             if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
             return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
         }
+
+        // Template file upload handling
+        const templateUploadArea = document.getElementById('templateUploadArea');
+        const templateInput = document.getElementById('templateInput');
+        const templateFileDisplay = document.getElementById('templateFileDisplay');
+        const priorityNote = document.getElementById('priorityNote');
+        const step1NextBtn = document.getElementById('step1Next');
+
+        templateUploadArea.addEventListener('click', () => {
+            templateInput.click();
+        });
+
+        templateUploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            templateUploadArea.classList.add('dragover');
+        });
+
+        templateUploadArea.addEventListener('dragleave', () => {
+            templateUploadArea.classList.remove('dragover');
+        });
+
+        templateUploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            templateUploadArea.classList.remove('dragover');
+            if (e.dataTransfer.files.length > 0) {
+                handleTemplateFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        templateInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleTemplateFile(e.target.files[0]);
+            }
+        });
+
+        function handleTemplateFile(file) {
+            if (!file) return;
+
+            const ext = file.name.toLowerCase().split('.').pop();
+            if (!['pptx', 'ppt'].includes(ext)) {
+                alert('Please upload a .pptx or .ppt file');
+                return;
+            }
+
+            templateFile = file;
+            renderTemplateFile();
+            validateStep1();
+        }
+
+        function renderTemplateFile() {
+            if (!templateFile) {
+                templateFileDisplay.innerHTML = '';
+                return;
+            }
+
+            templateFileDisplay.innerHTML = `
+                <div class="uploaded-file">
+                    <div class="uploaded-file-info">
+                        <span class="uploaded-file-icon">📊</span>
+                        <span>${templateFile.name}</span>
+                        <span class="uploaded-file-size">${formatFileSize(templateFile.size)}</span>
+                    </div>
+                    <button class="uploaded-file-remove" onclick="removeTemplateFile()" title="Remove file">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M18 6L6 18M6 6l12 12"/>
+                        </svg>
+                    </button>
+                </div>
+            `;
+        }
+
+        function removeTemplateFile() {
+            templateFile = null;
+            templateInput.value = '';
+            renderTemplateFile();
+            validateStep1();
+        }
+
+        function validateStep1() {
+            const url = document.getElementById('companyUrl').value;
+            const hasUrl = url && isValidUrl(url);
+            const hasTemplate = templateFile !== null;
+
+            // Enable button if at least one source is provided
+            step1NextBtn.disabled = !(hasUrl || hasTemplate);
+
+            // Show priority note if both are provided
+            priorityNote.style.display = (hasUrl && hasTemplate) ? 'flex' : 'none';
+        }
+
+        // Update company URL input to trigger validation
+        document.getElementById('companyUrl').addEventListener('input', validateStep1);
+
+        // Enter key to continue (updated to work with new validation)
+        document.getElementById('companyUrl').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter' && !step1NextBtn.disabled) {
+                nextStep();
+            }
+        });
     </script>
 </body>
 </html>

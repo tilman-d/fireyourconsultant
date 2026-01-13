@@ -21,6 +21,8 @@ from ..models import (
     ImageCategory,
     ScrapedImage,
     Stat,
+    TemplateProfile,
+    BackgroundStyle,
 )
 
 
@@ -76,7 +78,18 @@ class PptxGenerator:
 
     def __init__(self, brand: BrandProfile):
         self.brand = brand
-        self.prs = PptxPresentation()
+        self.template_profile: Optional[TemplateProfile] = brand.template_profile
+        self.using_template_base = False
+
+        # Use template as base if available, otherwise create blank presentation
+        if self.template_profile and self.template_profile.template_bytes:
+            self.prs = PptxPresentation(io.BytesIO(self.template_profile.template_bytes))
+            self.using_template_base = True
+            # Delete existing slides from template (we'll add our own content)
+            self._clear_template_slides()
+        else:
+            self.prs = PptxPresentation()
+
         self.prs.slide_width = self.SLIDE_WIDTH
         self.prs.slide_height = self.SLIDE_HEIGHT
 
@@ -89,6 +102,167 @@ class PptxGenerator:
 
         # Slide counter for alternating styles
         self.slide_count = 0
+
+    def _clear_template_slides(self):
+        """Remove all existing slides from the template.
+
+        Keeps master slides and layouts intact for styling.
+        """
+        # Get XML id list from presentation part
+        slide_ids = list(self.prs.slides._sldIdLst)
+        for slide_id in slide_ids:
+            rId = slide_id.rId
+            self.prs.part.drop_rel(rId)
+            self.prs.slides._sldIdLst.remove(slide_id)
+
+    def _find_layout_by_type(self, layout_type: str) -> int:
+        """Find the best matching layout index for a slide type.
+
+        Prefers layouts WITH background images/pictures for better visual styling.
+
+        Args:
+            layout_type: One of 'title', 'content', 'agenda', 'picture'
+
+        Returns:
+            Layout index to use
+        """
+        if not self.using_template_base:
+            return 6  # Default blank layout
+
+        # Priority-ordered keywords for each layout type
+        layout_priorities = {
+            'title': [
+                ['titelfolie', 'title slide'],  # Highest priority - actual title slide
+                ['titel', 'title'],              # Lower priority
+            ],
+            'content': [
+                ['1_titel und inhalt', '1_title and content'],  # Usually has background
+                ['titel und inhalt', 'title and content'],
+                ['inhalt', 'content'],
+            ],
+            'agenda': [
+                ['agenda'],
+                ['overview', 'übersicht'],
+            ],
+            'picture': [
+                ['1_titel', '1_title'],          # Layout with background
+                ['bild', 'picture', 'image'],
+                ['titel und inhalt', 'title and content'],
+            ],
+        }
+
+        priorities = layout_priorities.get(layout_type, [['content', 'inhalt']])
+
+        # First pass: search for layouts with background pictures (preferred)
+        for keyword_group in priorities:
+            for i, layout in enumerate(self.prs.slide_layouts):
+                name = layout.name.lower()
+                for kw in keyword_group:
+                    if kw in name:
+                        # Check if layout has background pictures
+                        has_picture = any(s.shape_type == 13 for s in layout.shapes)  # 13 = PICTURE
+                        if has_picture:
+                            return i
+
+        # Second pass: any matching layout (even without background)
+        for keyword_group in priorities:
+            for i, layout in enumerate(self.prs.slide_layouts):
+                name = layout.name.lower()
+                for kw in keyword_group:
+                    if kw in name:
+                        return i
+
+        # Third pass: find ANY layout with a background picture
+        for i, layout in enumerate(self.prs.slide_layouts):
+            has_picture = any(s.shape_type == 13 for s in layout.shapes)
+            if has_picture:
+                return i
+
+        # Default to first layout
+        return 0
+
+    def _create_slide_from_layout(self, layout_type: str):
+        """Create a slide using the best matching template layout.
+
+        Args:
+            layout_type: Type of slide ('title', 'content', 'agenda', 'picture')
+
+        Returns:
+            The created slide
+        """
+        layout_idx = self._find_layout_by_type(layout_type)
+        layout = self.prs.slide_layouts[layout_idx]
+        slide = self.prs.slides.add_slide(layout)
+        return slide
+
+    def _fill_placeholder(self, slide, placeholder_idx: int, text: str, font_size: int = None):
+        """Fill a specific placeholder with text.
+
+        Args:
+            slide: The slide to modify
+            placeholder_idx: Index of the placeholder
+            text: Text to insert
+            font_size: Optional font size in points
+        """
+        try:
+            ph = slide.placeholders[placeholder_idx]
+            tf = ph.text_frame
+            tf.clear()
+            p = tf.paragraphs[0]
+            p.text = text
+            if font_size:
+                p.font.size = Pt(font_size)
+            # Use template fonts
+            p.font.name = self.brand.fonts.body
+        except (KeyError, IndexError):
+            pass  # Placeholder doesn't exist
+
+    def _get_accent_color(self, index: int = 1) -> str:
+        """Get accent color from template theme or brand colors.
+
+        When a template is provided, uses the full palette of 6 accent colors.
+        Otherwise falls back to brand colors.
+        """
+        if self.template_profile:
+            colors = self.template_profile.theme_colors
+            accent_map = {
+                1: colors.accent1,
+                2: colors.accent2,
+                3: colors.accent3,
+                4: colors.accent4,
+                5: colors.accent5,
+                6: colors.accent6,
+            }
+            return accent_map.get(index, colors.accent1)
+        return self.brand.colors.accent
+
+    def _apply_template_background(self, slide, bg_style: Optional[BackgroundStyle] = None) -> bool:
+        """Apply extracted background style to a slide.
+
+        Returns True if background was applied, False otherwise.
+        """
+        if not bg_style:
+            if self.template_profile and self.template_profile.master_background:
+                bg_style = self.template_profile.master_background
+            else:
+                return False
+
+        background = slide.background
+        fill = background.fill
+
+        if bg_style.fill_type == "solid" and bg_style.solid_color:
+            fill.solid()
+            fill.fore_color.rgb = hex_to_rgb(bg_style.solid_color)
+            return True
+        elif bg_style.fill_type == "gradient" and bg_style.gradient_colors:
+            fill.gradient()
+            fill.gradient_angle = bg_style.gradient_angle
+            if len(bg_style.gradient_colors) >= 2:
+                fill.gradient_stops[0].color.rgb = hex_to_rgb(bg_style.gradient_colors[0])
+                fill.gradient_stops[1].color.rgb = hex_to_rgb(bg_style.gradient_colors[1])
+            return True
+
+        return False
 
     def _build_image_lookup(self):
         """Build lookup dictionary of images by category."""
@@ -127,15 +301,41 @@ class PptxGenerator:
         handler = layout_handlers.get(content.layout, self._add_bullet_slide)
         handler(content)
 
-    def _create_blank_slide(self):
-        """Create a blank slide with white background."""
-        blank_layout = self.prs.slide_layouts[6]
-        slide = self.prs.slides.add_slide(blank_layout)
-        # Set white background
-        background = slide.background
-        fill = background.fill
-        fill.solid()
-        fill.fore_color.rgb = RGBColor(255, 255, 255)
+    def _create_blank_slide(self, override_background: bool = None):
+        """Create a slide using the template's layout.
+
+        Args:
+            override_background: If True, forces white background.
+                                 If False, preserves template background.
+                                 If None (default), preserves background when using template.
+        """
+        # Use first content layout (index 1 is usually "Title and Content")
+        layout_idx = 1 if len(self.prs.slide_layouts) > 1 else 0
+
+        # Find best layout - prefer blank or content layout
+        for i, layout in enumerate(self.prs.slide_layouts):
+            layout_name = layout.name.lower()
+            if 'blank' in layout_name or 'leer' in layout_name:
+                layout_idx = i
+                break
+            elif 'content' in layout_name or 'inhalt' in layout_name:
+                layout_idx = i
+
+        slide = self.prs.slides.add_slide(self.prs.slide_layouts[layout_idx])
+
+        # Determine whether to override background
+        should_override = override_background
+        if should_override is None:
+            # Default: preserve template background when using template
+            should_override = not self.using_template_base
+
+        if should_override:
+            # Set white background
+            background = slide.background
+            fill = background.fill
+            fill.solid()
+            fill.fore_color.rgb = RGBColor(255, 255, 255)
+
         return slide
 
     def _add_gradient_shape(self, slide, left, top, width, height, color1: str, color2: str, angle: int = 90):
@@ -164,7 +364,31 @@ class PptxGenerator:
         return shape
 
     def _add_title_slide(self, content: SlideContent) -> None:
-        """Create a stunning title slide."""
+        """Create a title slide using template layout if available."""
+        if self.using_template_base:
+            # Use template's title layout
+            slide = self._create_slide_from_layout('title')
+
+            # Fill placeholders with content
+            title_filled = False
+            for ph in slide.placeholders:
+                idx = ph.placeholder_format.idx
+                ph_type = str(ph.placeholder_format.type)
+
+                if not title_filled and ('TITLE' in ph_type or idx <= 1):
+                    ph.text_frame.paragraphs[0].text = content.title
+                    ph.text_frame.paragraphs[0].font.name = self.brand.fonts.heading
+                    title_filled = True
+                elif 'SUBTITLE' in ph_type or (title_filled and idx <= 2):
+                    if content.subtitle:
+                        ph.text_frame.paragraphs[0].text = content.subtitle
+                        ph.text_frame.paragraphs[0].font.name = self.brand.fonts.body
+
+            if content.speaker_notes:
+                slide.notes_slide.notes_text_frame.text = content.speaker_notes
+            return
+
+        # Fallback: create custom title slide (no template)
         slide = self._create_blank_slide()
 
         # Full-width gradient background
@@ -242,7 +466,61 @@ class PptxGenerator:
             slide.notes_slide.notes_text_frame.text = content.speaker_notes
 
     def _add_bullet_slide(self, content: SlideContent) -> None:
-        """Create a visually engaging bullet point slide with alternating styles."""
+        """Create a bullet point slide using template layout if available."""
+        if self.using_template_base:
+            # Use template's content layout
+            slide = self._create_slide_from_layout('content')
+
+            # Find and fill placeholders
+            title_filled = False
+            body_filled = False
+
+            for ph in slide.placeholders:
+                idx = ph.placeholder_format.idx
+                ph_type = str(ph.placeholder_format.type)
+
+                # Fill title placeholder (first BODY or TITLE)
+                if not title_filled and ('TITLE' in ph_type or idx <= 2):
+                    tf = ph.text_frame
+                    tf.clear()
+                    p = tf.paragraphs[0]
+                    p.text = content.title
+                    p.font.name = self.brand.fonts.heading
+                    title_filled = True
+
+                # Fill body placeholder with bullets
+                elif not body_filled and 'BODY' in ph_type and idx > 2:
+                    tf = ph.text_frame
+                    tf.clear()
+                    for i, bullet in enumerate(content.bullets[:6]):
+                        if i == 0:
+                            p = tf.paragraphs[0]
+                        else:
+                            p = tf.add_paragraph()
+                        p.text = f"• {bullet}"
+                        p.font.name = self.brand.fonts.body
+                        p.font.size = Pt(18)
+                    body_filled = True
+
+            # If no body placeholder, add bullets manually
+            if not body_filled and content.bullets:
+                bullet_text = "\n".join(f"• {b}" for b in content.bullets[:6])
+                text_box = slide.shapes.add_textbox(
+                    Inches(1), Inches(2),
+                    Inches(11), Inches(5)
+                )
+                tf = text_box.text_frame
+                tf.word_wrap = True
+                p = tf.paragraphs[0]
+                p.text = bullet_text
+                p.font.name = self.brand.fonts.body
+                p.font.size = Pt(18)
+
+            if content.speaker_notes:
+                slide.notes_slide.notes_text_frame.text = content.speaker_notes
+            return
+
+        # Fallback: create custom bullet slide (no template)
         slide = self._create_blank_slide()
 
         # Alternate between two visual styles based on slide count
@@ -369,6 +647,55 @@ class PptxGenerator:
 
     def _add_two_column_slide(self, content: SlideContent) -> None:
         """Create a professional two-column comparison slide."""
+        if self.using_template_base:
+            # Use template content layout for two-column
+            slide = self._create_slide_from_layout('content')
+
+            # Combine left and right content into body
+            combined_text = ""
+            if content.left_content:
+                left_text = content.left_content
+                left_header = "Left"
+                if left_text.startswith("**") and "**" in left_text[2:]:
+                    end_idx = left_text.index("**", 2)
+                    left_header = left_text[2:end_idx]
+                    left_text = left_text[end_idx+2:].strip()
+                combined_text += f"{left_header}:\n{left_text}\n\n"
+
+            if content.right_content:
+                right_text = content.right_content
+                right_header = "Right"
+                if right_text.startswith("**") and "**" in right_text[2:]:
+                    end_idx = right_text.index("**", 2)
+                    right_header = right_text[2:end_idx]
+                    right_text = right_text[end_idx+2:].strip()
+                combined_text += f"{right_header}:\n{right_text}"
+
+            # Fill placeholders
+            title_filled = False
+            body_filled = False
+            for ph in slide.placeholders:
+                idx = ph.placeholder_format.idx
+                ph_type = str(ph.placeholder_format.type)
+
+                if not title_filled and ('TITLE' in ph_type or idx <= 2):
+                    ph.text_frame.paragraphs[0].text = content.title
+                    ph.text_frame.paragraphs[0].font.name = self.brand.fonts.heading
+                    title_filled = True
+                elif not body_filled and 'BODY' in ph_type and idx > 2:
+                    tf = ph.text_frame
+                    tf.clear()
+                    p = tf.paragraphs[0]
+                    p.text = combined_text.strip()
+                    p.font.name = self.brand.fonts.body
+                    p.font.size = Pt(16)
+                    body_filled = True
+
+            if content.speaker_notes:
+                slide.notes_slide.notes_text_frame.text = content.speaker_notes
+            return
+
+        # Fallback: custom two-column slide (no template)
         slide = self._create_blank_slide()
 
         # Top accent bar
@@ -507,6 +834,46 @@ class PptxGenerator:
 
     def _add_image_left_slide(self, content: SlideContent) -> None:
         """Create a slide with image on the left, content on right."""
+        if self.using_template_base:
+            # Use template picture or content layout
+            slide = self._create_slide_from_layout('picture')
+
+            content_text = content.body_text or "\n".join(f"• {b}" for b in content.bullets)
+
+            # Fill placeholders
+            title_filled = False
+            body_filled = False
+            for ph in slide.placeholders:
+                idx = ph.placeholder_format.idx
+                ph_type = str(ph.placeholder_format.type)
+
+                if not title_filled and ('TITLE' in ph_type or idx <= 2):
+                    ph.text_frame.paragraphs[0].text = content.title
+                    ph.text_frame.paragraphs[0].font.name = self.brand.fonts.heading
+                    title_filled = True
+                elif not body_filled and 'BODY' in ph_type and idx > 2:
+                    tf = ph.text_frame
+                    tf.clear()
+                    p = tf.paragraphs[0]
+                    p.text = content_text
+                    p.font.name = self.brand.fonts.body
+                    p.font.size = Pt(18)
+                    body_filled = True
+
+            # Add image in a reasonable position (template may not have picture placeholder)
+            image = self._get_image_for_category(content.image_category)
+            if image and image.local_path and Path(image.local_path).exists():
+                self._add_image_to_slide(
+                    slide, image.local_path,
+                    Inches(0.5), Inches(1.5),
+                    Inches(5), Inches(5)
+                )
+
+            if content.speaker_notes:
+                slide.notes_slide.notes_text_frame.text = content.speaker_notes
+            return
+
+        # Fallback: custom image left slide (no template)
         slide = self._create_blank_slide()
 
         # Image area with brand color overlay
@@ -580,6 +947,46 @@ class PptxGenerator:
 
     def _add_image_right_slide(self, content: SlideContent) -> None:
         """Create a slide with content on left, image on right."""
+        if self.using_template_base:
+            # Use template picture or content layout
+            slide = self._create_slide_from_layout('picture')
+
+            content_text = content.body_text or "\n".join(f"• {b}" for b in content.bullets)
+
+            # Fill placeholders
+            title_filled = False
+            body_filled = False
+            for ph in slide.placeholders:
+                idx = ph.placeholder_format.idx
+                ph_type = str(ph.placeholder_format.type)
+
+                if not title_filled and ('TITLE' in ph_type or idx <= 2):
+                    ph.text_frame.paragraphs[0].text = content.title
+                    ph.text_frame.paragraphs[0].font.name = self.brand.fonts.heading
+                    title_filled = True
+                elif not body_filled and 'BODY' in ph_type and idx > 2:
+                    tf = ph.text_frame
+                    tf.clear()
+                    p = tf.paragraphs[0]
+                    p.text = content_text
+                    p.font.name = self.brand.fonts.body
+                    p.font.size = Pt(18)
+                    body_filled = True
+
+            # Add image in a reasonable position (right side)
+            image = self._get_image_for_category(content.image_category)
+            if image and image.local_path and Path(image.local_path).exists():
+                self._add_image_to_slide(
+                    slide, image.local_path,
+                    Inches(7.5), Inches(1.5),
+                    Inches(5), Inches(5)
+                )
+
+            if content.speaker_notes:
+                slide.notes_slide.notes_text_frame.text = content.speaker_notes
+            return
+
+        # Fallback: custom image right slide (no template)
         slide = self._create_blank_slide()
 
         # Top accent bar
@@ -645,6 +1052,30 @@ class PptxGenerator:
 
     def _add_section_divider(self, content: SlideContent) -> None:
         """Create an impactful section divider slide."""
+        if self.using_template_base:
+            # Use template's title or section layout for dividers
+            slide = self._create_slide_from_layout('title')
+
+            # Fill placeholders
+            title_filled = False
+            for ph in slide.placeholders:
+                idx = ph.placeholder_format.idx
+                ph_type = str(ph.placeholder_format.type)
+
+                if not title_filled and ('TITLE' in ph_type or idx <= 1):
+                    ph.text_frame.paragraphs[0].text = content.title
+                    ph.text_frame.paragraphs[0].font.name = self.brand.fonts.heading
+                    title_filled = True
+                elif 'SUBTITLE' in ph_type or (title_filled and idx <= 2):
+                    if content.subtitle:
+                        ph.text_frame.paragraphs[0].text = content.subtitle
+                        ph.text_frame.paragraphs[0].font.name = self.brand.fonts.body
+
+            if content.speaker_notes:
+                slide.notes_slide.notes_text_frame.text = content.speaker_notes
+            return
+
+        # Fallback: create custom section divider (no template)
         slide = self._create_blank_slide()
 
         # Full gradient background
@@ -713,6 +1144,40 @@ class PptxGenerator:
 
     def _add_quote_slide(self, content: SlideContent) -> None:
         """Create an elegant quote/testimonial slide."""
+        if self.using_template_base:
+            # Use template content layout for quotes
+            slide = self._create_slide_from_layout('content')
+
+            quote_text = content.quote or content.body_text or content.title
+            if content.quote_author:
+                quote_text = f'"{quote_text}"\n\n— {content.quote_author}'
+
+            # Fill placeholders
+            title_filled = False
+            body_filled = False
+            for ph in slide.placeholders:
+                idx = ph.placeholder_format.idx
+                ph_type = str(ph.placeholder_format.type)
+
+                if not title_filled and ('TITLE' in ph_type or idx <= 2):
+                    ph.text_frame.paragraphs[0].text = content.title or "Quote"
+                    ph.text_frame.paragraphs[0].font.name = self.brand.fonts.heading
+                    title_filled = True
+                elif not body_filled and 'BODY' in ph_type and idx > 2:
+                    tf = ph.text_frame
+                    tf.clear()
+                    p = tf.paragraphs[0]
+                    p.text = quote_text
+                    p.font.name = self.brand.fonts.body
+                    p.font.size = Pt(24)
+                    p.font.italic = True
+                    body_filled = True
+
+            if content.speaker_notes:
+                slide.notes_slide.notes_text_frame.text = content.speaker_notes
+            return
+
+        # Fallback: create custom quote slide (no template)
         slide = self._create_blank_slide()
 
         # Light background with subtle gradient
@@ -781,6 +1246,62 @@ class PptxGenerator:
 
     def _add_stats_slide(self, content: SlideContent) -> None:
         """Create an impressive stats/metrics slide with large numbers."""
+        # Parse stats from bullets if no explicit stats provided
+        stats_data = []
+        if content.stats:
+            stats_data = content.stats
+        elif content.bullets:
+            # Try to parse bullets as stats (format: "Value - Description")
+            import re
+            for bullet in content.bullets[:4]:
+                if " - " in bullet:
+                    parts = bullet.split(" - ", 1)
+                    stats_data.append(Stat(value=parts[0].strip(), label=parts[1].strip()))
+                elif bullet and (bullet[0].isdigit() or bullet[0] in "$%"):
+                    match = re.match(r'^([\d$%,.]+\w*)\s*(.*)$', bullet)
+                    if match:
+                        stats_data.append(Stat(value=match.group(1), label=match.group(2)))
+
+        if self.using_template_base:
+            # Use template content layout for stats
+            slide = self._create_slide_from_layout('content')
+
+            # Fill placeholders
+            title_filled = False
+            body_filled = False
+            for ph in slide.placeholders:
+                idx = ph.placeholder_format.idx
+                ph_type = str(ph.placeholder_format.type)
+
+                if not title_filled and ('TITLE' in ph_type or idx <= 2):
+                    ph.text_frame.paragraphs[0].text = content.title
+                    ph.text_frame.paragraphs[0].font.name = self.brand.fonts.heading
+                    title_filled = True
+                elif not body_filled and 'BODY' in ph_type and idx > 2:
+                    tf = ph.text_frame
+                    tf.clear()
+                    # Format stats as text since we can't add colored cards
+                    for i, stat in enumerate(stats_data[:4]):
+                        if i == 0:
+                            p = tf.paragraphs[0]
+                        else:
+                            p = tf.add_paragraph()
+                        value = stat.value if isinstance(stat, Stat) else str(stat.get('value', ''))
+                        label = stat.label if isinstance(stat, Stat) else str(stat.get('label', ''))
+                        p.text = f"{value} — {label}"
+                        p.font.name = self.brand.fonts.body
+                        p.font.size = Pt(24)
+                    body_filled = True
+
+            if content.speaker_notes:
+                slide.notes_slide.notes_text_frame.text = content.speaker_notes
+            return
+
+        # Fallback: custom stats slide (no template)
+        num_stats = min(len(stats_data), 4)
+        if num_stats == 0:
+            return self._add_bullet_slide(content)
+
         slide = self._create_blank_slide()
 
         # Subtle gradient background
@@ -805,27 +1326,6 @@ class PptxGenerator:
         p.font.bold = True
         p.font.color.rgb = hex_to_rgb(self.brand.colors.text)
         p.font.name = self.brand.fonts.heading
-
-        # Parse stats from bullets if no explicit stats provided
-        stats_data = []
-        if content.stats:
-            stats_data = content.stats
-        elif content.bullets:
-            # Try to parse bullets as stats (format: "Value - Description")
-            for bullet in content.bullets[:4]:
-                if " - " in bullet:
-                    parts = bullet.split(" - ", 1)
-                    stats_data.append(Stat(value=parts[0].strip(), label=parts[1].strip()))
-                elif bullet[0].isdigit() or bullet[0] in "$%":
-                    # Try to extract number from start
-                    import re
-                    match = re.match(r'^([\d$%,.]+\w*)\s*(.*)$', bullet)
-                    if match:
-                        stats_data.append(Stat(value=match.group(1), label=match.group(2)))
-
-        num_stats = min(len(stats_data), 4)
-        if num_stats == 0:
-            return self._add_bullet_slide(content)  # Fallback
 
         # Calculate positions
         card_width = Inches(2.7)
@@ -895,6 +1395,31 @@ class PptxGenerator:
 
     def _add_thank_you_slide(self, content: SlideContent) -> None:
         """Create a compelling closing slide."""
+        if self.using_template_base:
+            # Use template's title layout for thank you slide
+            slide = self._create_slide_from_layout('title')
+
+            # Fill placeholders
+            title_filled = False
+            for ph in slide.placeholders:
+                idx = ph.placeholder_format.idx
+                ph_type = str(ph.placeholder_format.type)
+
+                if not title_filled and ('TITLE' in ph_type or idx <= 1):
+                    ph.text_frame.paragraphs[0].text = content.title or "Thank You"
+                    ph.text_frame.paragraphs[0].font.name = self.brand.fonts.heading
+                    title_filled = True
+                elif 'SUBTITLE' in ph_type or (title_filled and idx <= 2):
+                    contact_text = content.body_text or content.subtitle or ""
+                    if contact_text:
+                        ph.text_frame.paragraphs[0].text = contact_text
+                        ph.text_frame.paragraphs[0].font.name = self.brand.fonts.body
+
+            if content.speaker_notes:
+                slide.notes_slide.notes_text_frame.text = content.speaker_notes
+            return
+
+        # Fallback: custom thank you slide (no template)
         slide = self._create_blank_slide()
 
         # Full gradient background

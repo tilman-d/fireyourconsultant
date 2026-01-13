@@ -101,10 +101,17 @@ Choose layouts strategically:
 - bullet_points: For key features, benefits, or steps (limit to 4-5 items)
 - two_column: For comparisons, before/after, pros/cons, or contrasting ideas
 - stats: For impressive metrics, KPIs, or numeric achievements (use 3-4 stats per slide)
-- image_left / image_right: When visuals support the message
+- image_left / image_right: USE THESE when images are available! They add visual interest and branding. Alternate between left and right placement.
 - section_divider: To introduce new major sections (use sparingly)
 - quote: For testimonials, key statements, or memorable insights
 - thank_you: ONLY for the final slide
+
+### Image Usage (IMPORTANT!)
+When image categories are available, you MUST include image_left or image_right layouts to showcase them.
+- Include at least 2-3 image slides if 3+ image categories are available
+- Include at least 1-2 image slides if 1-2 image categories are available
+- Specify the image_category field matching an available category
+- Use images for: showcasing products, team culture, office environment, customer stories
 
 ### Stats Slides (Important!)
 When presenting metrics, KPIs, or numeric achievements, use the stats layout:
@@ -159,12 +166,13 @@ AVAILABLE IMAGE CATEGORIES: {images_str}
 
 REQUIREMENTS:
 1. Slide 1: title_slide with compelling headline
-2. Slides 2-{slide_count-1}: Mix of bullet_points, two_column, stats, section_divider layouts
+2. Slides 2-{slide_count-1}: Mix of bullet_points, two_column, stats, image_left, image_right, section_divider layouts
 3. IMPORTANT: Include at least ONE stats slide with impactful metrics
-4. Slide {slide_count}: thank_you with call-to-action
-5. Include speaker_notes for each slide (2-3 sentences of talking points)
-6. Never use the same layout twice consecutively
-7. Make titles action-oriented and specific
+4. IMPORTANT: If image categories are available above, include 2-3 slides using image_left or image_right layouts with matching image_category field
+5. Slide {slide_count}: thank_you with call-to-action
+6. Include speaker_notes for each slide (2-3 sentences of talking points)
+7. Never use the same layout twice consecutively
+8. Make titles action-oriented and specific
 
 Return this exact JSON structure:
 {{
@@ -201,6 +209,20 @@ Return this exact JSON structure:
             "title": "Section Name",
             "subtitle": "Brief description",
             "speaker_notes": "Transition notes"
+        }},
+        {{
+            "layout": "image_left",
+            "title": "Visual Story Title",
+            "body_text": "Supporting content that complements the image and tells the story",
+            "image_category": "product",
+            "speaker_notes": "Talking points about the visual"
+        }},
+        {{
+            "layout": "image_right",
+            "title": "Another Visual Slide",
+            "bullets": ["Key point one", "Key point two", "Key point three"],
+            "image_category": "team",
+            "speaker_notes": "Talking points"
         }},
         {{
             "layout": "thank_you",

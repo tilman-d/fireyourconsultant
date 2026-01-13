@@ -5,6 +5,99 @@ from typing import Optional
 from enum import Enum
 
 
+# =============================================================================
+# Template Profile Models (for PPTX style extraction)
+# =============================================================================
+
+
+class ThemeColors(BaseModel):
+    """Theme colors extracted from PPTX template."""
+    dk1: str = "#000000"      # Dark 1 (usually text)
+    lt1: str = "#FFFFFF"      # Light 1 (usually background)
+    dk2: str = "#1F497D"      # Dark 2
+    lt2: str = "#EEECE1"      # Light 2
+    accent1: str = "#4F81BD"  # Accent 1 (often primary)
+    accent2: str = "#C0504D"  # Accent 2
+    accent3: str = "#9BBB59"  # Accent 3
+    accent4: str = "#8064A2"  # Accent 4
+    accent5: str = "#4BACC6"  # Accent 5
+    accent6: str = "#F79646"  # Accent 6
+    hlink: str = "#0000FF"    # Hyperlink
+    folHlink: str = "#800080"  # Followed hyperlink
+
+
+class ThemeFonts(BaseModel):
+    """Theme fonts extracted from PPTX template."""
+    major_latin: str = "Calibri"   # Heading font
+    minor_latin: str = "Calibri"   # Body font
+    major_ea: str = ""             # East Asian heading
+    minor_ea: str = ""             # East Asian body
+    major_cs: str = ""             # Complex script heading
+    minor_cs: str = ""             # Complex script body
+
+
+class BackgroundStyle(BaseModel):
+    """Background style from a slide/master."""
+    fill_type: str = "solid"  # solid, gradient, pattern, picture
+    solid_color: Optional[str] = None
+    gradient_colors: list[str] = Field(default_factory=list)
+    gradient_angle: float = 0
+    picture_path: Optional[str] = None  # For extracted background images
+
+
+class PlaceholderInfo(BaseModel):
+    """Information about a placeholder in a layout."""
+    idx: int
+    type: str  # TITLE, BODY, SUBTITLE, etc.
+    left: float  # in inches
+    top: float
+    width: float
+    height: float
+    font_name: Optional[str] = None
+    font_size: Optional[float] = None  # in points
+    font_color: Optional[str] = None
+    font_bold: Optional[bool] = None
+
+
+class ExtractedLayout(BaseModel):
+    """Extracted slide layout information."""
+    name: str
+    idx: int
+    placeholders: list[PlaceholderInfo] = Field(default_factory=list)
+    background: Optional[BackgroundStyle] = None
+    shapes: list[dict] = Field(default_factory=list)  # Non-placeholder shapes
+
+
+class ExtractedColorPalette(BaseModel):
+    """Color palette extracted from actual shapes in the template."""
+    primary: Optional[str] = None       # Most prominent non-white/black color
+    secondary: Optional[str] = None     # Second most prominent
+    accent: Optional[str] = None        # Third most prominent
+    background: Optional[str] = None    # Most common background color
+    text: Optional[str] = None          # Most common text color
+    all_colors: list[str] = Field(default_factory=list)  # All unique colors found
+
+
+class TemplateProfile(BaseModel):
+    """Complete profile extracted from uploaded PPTX template."""
+    source_file: str = ""
+    theme_colors: ThemeColors = Field(default_factory=ThemeColors)
+    theme_fonts: ThemeFonts = Field(default_factory=ThemeFonts)
+    master_background: Optional[BackgroundStyle] = None
+    layouts: list[ExtractedLayout] = Field(default_factory=list)
+    extracted_images: list[str] = Field(default_factory=list)  # Paths to extracted bg images
+    # NEW: Actual colors found in shapes (more accurate than theme)
+    extracted_palette: ExtractedColorPalette = Field(default_factory=ExtractedColorPalette)
+    # NEW: Store template content to use as base for generation
+    # Excluded from JSON serialization (binary data)
+    template_bytes: Optional[bytes] = Field(default=None, exclude=True)
+
+
+# =============================================================================
+# Image and Scraping Models
+# =============================================================================
+
+
 class ImageCategory(str, Enum):
     """Categories for scraped images."""
     TEAM = "team"
@@ -61,7 +154,7 @@ class BrandVoice(BaseModel):
 
 
 class BrandProfile(BaseModel):
-    """Complete brand profile extracted from website."""
+    """Complete brand profile extracted from website and/or PPTX template."""
     company_name: str = ""
     tagline: str = ""
     language: str = "en"
@@ -71,6 +164,7 @@ class BrandProfile(BaseModel):
     logo_path: Optional[str] = None
     images: list[ScrapedImage] = Field(default_factory=list)
     raw_text_samples: list[str] = Field(default_factory=list)
+    template_profile: Optional[TemplateProfile] = None  # From uploaded PPTX template
 
 
 class SlideLayout(str, Enum):
@@ -118,7 +212,7 @@ class Presentation(BaseModel):
 
 class GenerationRequest(BaseModel):
     """Request to generate a presentation."""
-    company_url: HttpUrl
+    company_url: Optional[HttpUrl] = None  # Optional if template provided
     topic: str
     slide_count: int = Field(default=10, ge=3, le=30)
     additional_context: str = ""
