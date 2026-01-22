@@ -1227,7 +1227,7 @@
                     formData.append('files', file);
                 }
 
-                const response = await fetch('/api/generate', {
+                const response = await fetch('api/generate', {
                     method: 'POST',
                     body: formData
                 });
@@ -1253,7 +1253,7 @@
             if (!jobId) return;
 
             try {
-                const response = await fetch(`/api/job/${jobId}`);
+                const response = await fetch(`api/job/${jobId}`);
                 const data = await response.json();
 
                 updateProgress(data);
@@ -1349,7 +1349,9 @@
                     clearInterval(animationInterval);
                     animationInterval = null;
                 }
-                document.getElementById('downloadBtn').href = downloadUrl;
+                // Convert absolute path to relative (remove leading slash)
+                const relativeUrl = downloadUrl.startsWith('/') ? downloadUrl.slice(1) : downloadUrl;
+                document.getElementById('downloadBtn').href = relativeUrl;
                 goToStep(4);
             }, 800); // Wait for animation to complete
         }

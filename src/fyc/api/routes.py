@@ -8,7 +8,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException, BackgroundTasks, UploadFile, File, Form
 from fastapi.responses import FileResponse
 
-from ..config import settings
+from ..config import settings, logger
 from ..models import (
     GenerationRequest,
     JobResponse,
@@ -32,6 +32,7 @@ jobs: dict[str, dict] = {}
 
 async def process_presentation(job_id: str, request: GenerationRequest) -> None:
     """Background task to process a presentation generation request."""
+    logger.info(f"Starting job {job_id}: topic='{request.topic}', slides={request.slide_count}")
     try:
         output_dir = settings.output_dir / job_id
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -147,14 +148,13 @@ async def process_presentation(job_id: str, request: GenerationRequest) -> None:
         jobs[job_id]["message"] = "Presentation ready!"
         jobs[job_id]["download_url"] = f"/api/download/{job_id}"
         jobs[job_id]["output_path"] = str(output_path)
+        logger.info(f"Job {job_id} completed successfully: {output_path}")
 
     except Exception as e:
         jobs[job_id]["status"] = JobStatus.FAILED
         jobs[job_id]["error"] = str(e)
         jobs[job_id]["message"] = f"Error: {str(e)}"
-        print(f"Error processing job {job_id}: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.error(f"Error processing job {job_id}: {e}", exc_info=True)
 
 
 @router.post("/generate", response_model=JobResponse)
