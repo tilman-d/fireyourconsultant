@@ -118,10 +118,12 @@ class PptxGenerator:
     def _find_layout_by_type(self, layout_type: str) -> int:
         """Find the best matching layout index for a slide type.
 
-        Prefers layouts WITH background images/pictures for better visual styling.
+        Matches template layouts based on their structure and purpose.
+        For corporate templates, content layouts often have a specific naming
+        convention (e.g., "2_Titel und Inhalt" for content with side image).
 
         Args:
-            layout_type: One of 'title', 'content', 'agenda', 'picture'
+            layout_type: One of 'title', 'content', 'agenda', 'section_divider'
 
         Returns:
             Layout index to use
@@ -130,53 +132,44 @@ class PptxGenerator:
             return 6  # Default blank layout
 
         # Priority-ordered keywords for each layout type
+        # Note: '2_' prefix layouts are typically main content layouts in corporate templates
         layout_priorities = {
             'title': [
-                ['titelfolie', 'title slide'],  # Highest priority - actual title slide
-                ['titel', 'title'],              # Lower priority
+                ['1_titelfolie', '1_title slide'],  # Title slide with picture
+                ['titelfolie', 'title slide'],
             ],
             'content': [
-                ['1_titel und inhalt', '1_title and content'],  # Usually has background
+                ['2_titel und inhalt', '2_title and content'],  # Main content layout
                 ['titel und inhalt', 'title and content'],
                 ['inhalt', 'content'],
+            ],
+            'section_divider': [
+                ['1_titelfolie', '1_title slide'],  # Section dividers often use title layout
+                ['titelfolie', 'title slide'],
             ],
             'agenda': [
                 ['agenda'],
                 ['overview', 'übersicht'],
             ],
-            'picture': [
-                ['1_titel', '1_title'],          # Layout with background
-                ['bild', 'picture', 'image'],
-                ['titel und inhalt', 'title and content'],
-            ],
         }
 
         priorities = layout_priorities.get(layout_type, [['content', 'inhalt']])
 
-        # First pass: search for layouts with background pictures (preferred)
+        # First pass: exact prefix match (e.g., "2_titel und inhalt")
         for keyword_group in priorities:
             for i, layout in enumerate(self.prs.slide_layouts):
                 name = layout.name.lower()
                 for kw in keyword_group:
-                    if kw in name:
-                        # Check if layout has background pictures
-                        has_picture = any(s.shape_type == 13 for s in layout.shapes)  # 13 = PICTURE
-                        if has_picture:
-                            return i
+                    if name == kw or name.startswith(kw):
+                        return i
 
-        # Second pass: any matching layout (even without background)
+        # Second pass: substring match
         for keyword_group in priorities:
             for i, layout in enumerate(self.prs.slide_layouts):
                 name = layout.name.lower()
                 for kw in keyword_group:
                     if kw in name:
                         return i
-
-        # Third pass: find ANY layout with a background picture
-        for i, layout in enumerate(self.prs.slide_layouts):
-            has_picture = any(s.shape_type == 13 for s in layout.shapes)
-            if has_picture:
-                return i
 
         # Default to first layout
         return 0
@@ -363,26 +356,151 @@ class PptxGenerator:
         shape.line.fill.background()
         return shape
 
+    def _fill_template_placeholders(self, slide, content: SlideContent, layout_type: str = 'content'):
+        """Fill template placeholders intelligently based on layout structure.
+
+        Template placeholders often use BODY type for all text, so we determine
+        purpose by position (idx) rather than type:
+        - idx=1: Usually title (larger, prominent position)
+        - idx=2: Usually subtitle/tagline
+        - idx=3+: Additional body content or pictures
+        - idx=12: Usually slide number/footer (auto-handled)
+        """
+        # Sort placeholders by idx for consistent filling
+        placeholders = sorted(slide.placeholders, key=lambda p: p.placeholder_format.idx)
+
+        title_filled = False
+        subtitle_filled = False
+        body_filled = False
+        image_filled = False
+
+        # Get image for this slide if needed
+        image = self._get_image_for_category(content.image_category)
+
+        for ph in placeholders:
+            idx = ph.placeholder_format.idx
+            ph_type = str(ph.placeholder_format.type)
+
+            # Skip slide number placeholders (handled automatically)
+            if 'SLIDE_NUMBER' in ph_type or idx >= 10:
+                continue
+
+            # Handle picture placeholders
+            if 'PICTURE' in ph_type:
+                if not image_filled and image and image.local_path:
+                    try:
+                        ph.insert_picture(image.local_path)
+                        image_filled = True
+                    except Exception:
+                        pass
+                continue
+
+            # Handle text placeholders based on idx position
+            if not ph.has_text_frame:
+                continue
+
+            # idx=1 is typically the main title
+            if idx == 1 and not title_filled:
+                tf = ph.text_frame
+                tf.clear()
+                p = tf.paragraphs[0]
+                p.text = content.title
+                # Don't override font - let template styling apply
+                title_filled = True
+
+            # idx=2 is typically subtitle
+            elif idx == 2 and not subtitle_filled:
+                tf = ph.text_frame
+                tf.clear()
+                p = tf.paragraphs[0]
+                # For title slides use subtitle, for content slides use tagline
+                if content.subtitle:
+                    p.text = content.subtitle
+                elif self.brand.tagline and layout_type != 'title':
+                    # Use brand tagline as default subtitle for content slides
+                    p.text = self.brand.tagline
+                # Keep template's default text if no subtitle
+                subtitle_filled = True
+
+            # idx=3+ is typically body content
+            elif idx >= 3 and not body_filled and 'PICTURE' not in ph_type:
+                tf = ph.text_frame
+                tf.clear()
+                if content.bullets:
+                    for i, bullet in enumerate(content.bullets[:6]):
+                        if i == 0:
+                            p = tf.paragraphs[0]
+                        else:
+                            p = tf.add_paragraph()
+                        p.text = f"• {bullet}"
+                elif content.body_text:
+                    p = tf.paragraphs[0]
+                    p.text = content.body_text
+                body_filled = True
+
+        # If we have bullets/body content but couldn't fill a body placeholder,
+        # add a textbox manually in the content area (left side, below subtitle)
+        if not body_filled and layout_type == 'content' and (content.bullets or content.body_text):
+            self._add_content_textbox(slide, content)
+
+        return title_filled
+
+    def _add_content_textbox(self, slide, content: SlideContent):
+        """Add a textbox for content when template lacks body placeholder.
+
+        Positions content on left side of slide, suitable for layouts with
+        picture placeholder on right.
+        """
+        # Content area: left side, below the subtitle area
+        left = Inches(0.5)
+        top = Inches(1.8)
+        width = Inches(5.5)  # Leave room for image on right
+        height = Inches(5.0)
+
+        text_box = slide.shapes.add_textbox(left, top, width, height)
+        tf = text_box.text_frame
+        tf.word_wrap = True
+
+        if content.bullets:
+            for i, bullet in enumerate(content.bullets[:6]):
+                if i == 0:
+                    p = tf.paragraphs[0]
+                else:
+                    p = tf.add_paragraph()
+                # Use numbered bullets like the template (1., 2., 3., etc.)
+                p.text = f"{i + 1}. {bullet}"
+                p.font.size = Pt(16)
+                p.font.name = self.brand.fonts.body
+                p.line_spacing = 1.5
+        elif content.body_text:
+            p = tf.paragraphs[0]
+            p.text = content.body_text
+            p.font.size = Pt(16)
+            p.font.name = self.brand.fonts.body
+            p.line_spacing = 1.5
+
     def _add_title_slide(self, content: SlideContent) -> None:
         """Create a title slide using template layout if available."""
         if self.using_template_base:
             # Use template's title layout
             slide = self._create_slide_from_layout('title')
 
-            # Fill placeholders with content
-            title_filled = False
-            for ph in slide.placeholders:
-                idx = ph.placeholder_format.idx
-                ph_type = str(ph.placeholder_format.type)
+            # Fill placeholders using intelligent mapping
+            self._fill_template_placeholders(slide, content, 'title')
 
-                if not title_filled and ('TITLE' in ph_type or idx <= 1):
-                    ph.text_frame.paragraphs[0].text = content.title
-                    ph.text_frame.paragraphs[0].font.name = self.brand.fonts.heading
-                    title_filled = True
-                elif 'SUBTITLE' in ph_type or (title_filled and idx <= 2):
-                    if content.subtitle:
-                        ph.text_frame.paragraphs[0].text = content.subtitle
-                        ph.text_frame.paragraphs[0].font.name = self.brand.fonts.body
+            # Add subtitle textbox if subtitle provided (template may not have subtitle placeholder)
+            if content.subtitle:
+                # Position subtitle below title (right side of slide)
+                subtitle_box = slide.shapes.add_textbox(
+                    Inches(7.1), Inches(3.8),  # Below title position
+                    Inches(5.4), Inches(0.6),
+                )
+                tf = subtitle_box.text_frame
+                p = tf.paragraphs[0]
+                p.text = content.subtitle
+                p.font.size = Pt(14)
+                p.font.name = self.brand.fonts.body
+                p.font.color.rgb = hex_to_rgb(self.brand.colors.text_light)
 
             if content.speaker_notes:
                 slide.notes_slide.notes_text_frame.text = content.speaker_notes
@@ -471,50 +589,8 @@ class PptxGenerator:
             # Use template's content layout
             slide = self._create_slide_from_layout('content')
 
-            # Find and fill placeholders
-            title_filled = False
-            body_filled = False
-
-            for ph in slide.placeholders:
-                idx = ph.placeholder_format.idx
-                ph_type = str(ph.placeholder_format.type)
-
-                # Fill title placeholder (first BODY or TITLE)
-                if not title_filled and ('TITLE' in ph_type or idx <= 2):
-                    tf = ph.text_frame
-                    tf.clear()
-                    p = tf.paragraphs[0]
-                    p.text = content.title
-                    p.font.name = self.brand.fonts.heading
-                    title_filled = True
-
-                # Fill body placeholder with bullets
-                elif not body_filled and 'BODY' in ph_type and idx > 2:
-                    tf = ph.text_frame
-                    tf.clear()
-                    for i, bullet in enumerate(content.bullets[:6]):
-                        if i == 0:
-                            p = tf.paragraphs[0]
-                        else:
-                            p = tf.add_paragraph()
-                        p.text = f"• {bullet}"
-                        p.font.name = self.brand.fonts.body
-                        p.font.size = Pt(18)
-                    body_filled = True
-
-            # If no body placeholder, add bullets manually
-            if not body_filled and content.bullets:
-                bullet_text = "\n".join(f"• {b}" for b in content.bullets[:6])
-                text_box = slide.shapes.add_textbox(
-                    Inches(1), Inches(2),
-                    Inches(11), Inches(5)
-                )
-                tf = text_box.text_frame
-                tf.word_wrap = True
-                p = tf.paragraphs[0]
-                p.text = bullet_text
-                p.font.name = self.brand.fonts.body
-                p.font.size = Pt(18)
+            # Fill placeholders using intelligent mapping
+            self._fill_template_placeholders(slide, content, 'content')
 
             if content.speaker_notes:
                 slide.notes_slide.notes_text_frame.text = content.speaker_notes
@@ -651,8 +727,8 @@ class PptxGenerator:
             # Use template content layout for two-column
             slide = self._create_slide_from_layout('content')
 
-            # Combine left and right content into body
-            combined_text = ""
+            # Combine left and right content into bullets format
+            combined_bullets = []
             if content.left_content:
                 left_text = content.left_content
                 left_header = "Left"
@@ -660,7 +736,7 @@ class PptxGenerator:
                     end_idx = left_text.index("**", 2)
                     left_header = left_text[2:end_idx]
                     left_text = left_text[end_idx+2:].strip()
-                combined_text += f"{left_header}:\n{left_text}\n\n"
+                combined_bullets.append(f"{left_header}: {left_text}")
 
             if content.right_content:
                 right_text = content.right_content
@@ -669,27 +745,19 @@ class PptxGenerator:
                     end_idx = right_text.index("**", 2)
                     right_header = right_text[2:end_idx]
                     right_text = right_text[end_idx+2:].strip()
-                combined_text += f"{right_header}:\n{right_text}"
+                combined_bullets.append(f"{right_header}: {right_text}")
 
-            # Fill placeholders
-            title_filled = False
-            body_filled = False
-            for ph in slide.placeholders:
-                idx = ph.placeholder_format.idx
-                ph_type = str(ph.placeholder_format.type)
+            # Create a modified content with combined bullets
+            modified_content = SlideContent(
+                layout=content.layout,
+                title=content.title,
+                subtitle=content.subtitle,
+                bullets=combined_bullets if combined_bullets else content.bullets,
+                speaker_notes=content.speaker_notes,
+                image_category=content.image_category,
+            )
 
-                if not title_filled and ('TITLE' in ph_type or idx <= 2):
-                    ph.text_frame.paragraphs[0].text = content.title
-                    ph.text_frame.paragraphs[0].font.name = self.brand.fonts.heading
-                    title_filled = True
-                elif not body_filled and 'BODY' in ph_type and idx > 2:
-                    tf = ph.text_frame
-                    tf.clear()
-                    p = tf.paragraphs[0]
-                    p.text = combined_text.strip()
-                    p.font.name = self.brand.fonts.body
-                    p.font.size = Pt(16)
-                    body_filled = True
+            self._fill_template_placeholders(slide, modified_content, 'content')
 
             if content.speaker_notes:
                 slide.notes_slide.notes_text_frame.text = content.speaker_notes
@@ -835,39 +903,11 @@ class PptxGenerator:
     def _add_image_left_slide(self, content: SlideContent) -> None:
         """Create a slide with image on the left, content on right."""
         if self.using_template_base:
-            # Use template picture or content layout
-            slide = self._create_slide_from_layout('picture')
+            # Use template content layout (which has picture placeholder on right)
+            slide = self._create_slide_from_layout('content')
 
-            content_text = content.body_text or "\n".join(f"• {b}" for b in content.bullets)
-
-            # Fill placeholders
-            title_filled = False
-            body_filled = False
-            for ph in slide.placeholders:
-                idx = ph.placeholder_format.idx
-                ph_type = str(ph.placeholder_format.type)
-
-                if not title_filled and ('TITLE' in ph_type or idx <= 2):
-                    ph.text_frame.paragraphs[0].text = content.title
-                    ph.text_frame.paragraphs[0].font.name = self.brand.fonts.heading
-                    title_filled = True
-                elif not body_filled and 'BODY' in ph_type and idx > 2:
-                    tf = ph.text_frame
-                    tf.clear()
-                    p = tf.paragraphs[0]
-                    p.text = content_text
-                    p.font.name = self.brand.fonts.body
-                    p.font.size = Pt(18)
-                    body_filled = True
-
-            # Add image in a reasonable position (template may not have picture placeholder)
-            image = self._get_image_for_category(content.image_category)
-            if image and image.local_path and Path(image.local_path).exists():
-                self._add_image_to_slide(
-                    slide, image.local_path,
-                    Inches(0.5), Inches(1.5),
-                    Inches(5), Inches(5)
-                )
+            # Fill template placeholders - template handles image position
+            self._fill_template_placeholders(slide, content, 'content')
 
             if content.speaker_notes:
                 slide.notes_slide.notes_text_frame.text = content.speaker_notes
@@ -948,39 +988,11 @@ class PptxGenerator:
     def _add_image_right_slide(self, content: SlideContent) -> None:
         """Create a slide with content on left, image on right."""
         if self.using_template_base:
-            # Use template picture or content layout
-            slide = self._create_slide_from_layout('picture')
+            # Use template content layout (which has picture placeholder on right)
+            slide = self._create_slide_from_layout('content')
 
-            content_text = content.body_text or "\n".join(f"• {b}" for b in content.bullets)
-
-            # Fill placeholders
-            title_filled = False
-            body_filled = False
-            for ph in slide.placeholders:
-                idx = ph.placeholder_format.idx
-                ph_type = str(ph.placeholder_format.type)
-
-                if not title_filled and ('TITLE' in ph_type or idx <= 2):
-                    ph.text_frame.paragraphs[0].text = content.title
-                    ph.text_frame.paragraphs[0].font.name = self.brand.fonts.heading
-                    title_filled = True
-                elif not body_filled and 'BODY' in ph_type and idx > 2:
-                    tf = ph.text_frame
-                    tf.clear()
-                    p = tf.paragraphs[0]
-                    p.text = content_text
-                    p.font.name = self.brand.fonts.body
-                    p.font.size = Pt(18)
-                    body_filled = True
-
-            # Add image in a reasonable position (right side)
-            image = self._get_image_for_category(content.image_category)
-            if image and image.local_path and Path(image.local_path).exists():
-                self._add_image_to_slide(
-                    slide, image.local_path,
-                    Inches(7.5), Inches(1.5),
-                    Inches(5), Inches(5)
-                )
+            # Fill template placeholders - template handles image position
+            self._fill_template_placeholders(slide, content, 'content')
 
             if content.speaker_notes:
                 slide.notes_slide.notes_text_frame.text = content.speaker_notes
@@ -1053,23 +1065,11 @@ class PptxGenerator:
     def _add_section_divider(self, content: SlideContent) -> None:
         """Create an impactful section divider slide."""
         if self.using_template_base:
-            # Use template's title or section layout for dividers
-            slide = self._create_slide_from_layout('title')
+            # Use template's title layout for section dividers
+            slide = self._create_slide_from_layout('section_divider')
 
-            # Fill placeholders
-            title_filled = False
-            for ph in slide.placeholders:
-                idx = ph.placeholder_format.idx
-                ph_type = str(ph.placeholder_format.type)
-
-                if not title_filled and ('TITLE' in ph_type or idx <= 1):
-                    ph.text_frame.paragraphs[0].text = content.title
-                    ph.text_frame.paragraphs[0].font.name = self.brand.fonts.heading
-                    title_filled = True
-                elif 'SUBTITLE' in ph_type or (title_filled and idx <= 2):
-                    if content.subtitle:
-                        ph.text_frame.paragraphs[0].text = content.subtitle
-                        ph.text_frame.paragraphs[0].font.name = self.brand.fonts.body
+            # Fill template placeholders
+            self._fill_template_placeholders(slide, content, 'title')
 
             if content.speaker_notes:
                 slide.notes_slide.notes_text_frame.text = content.speaker_notes
@@ -1148,30 +1148,21 @@ class PptxGenerator:
             # Use template content layout for quotes
             slide = self._create_slide_from_layout('content')
 
-            quote_text = content.quote or content.body_text or content.title
+            # Format quote with author
+            quote_text = content.quote or content.body_text or ""
             if content.quote_author:
                 quote_text = f'"{quote_text}"\n\n— {content.quote_author}'
 
-            # Fill placeholders
-            title_filled = False
-            body_filled = False
-            for ph in slide.placeholders:
-                idx = ph.placeholder_format.idx
-                ph_type = str(ph.placeholder_format.type)
+            # Create modified content with quote as body text
+            modified_content = SlideContent(
+                layout=content.layout,
+                title=content.title or "Quote",
+                body_text=quote_text,
+                speaker_notes=content.speaker_notes,
+                image_category=content.image_category,
+            )
 
-                if not title_filled and ('TITLE' in ph_type or idx <= 2):
-                    ph.text_frame.paragraphs[0].text = content.title or "Quote"
-                    ph.text_frame.paragraphs[0].font.name = self.brand.fonts.heading
-                    title_filled = True
-                elif not body_filled and 'BODY' in ph_type and idx > 2:
-                    tf = ph.text_frame
-                    tf.clear()
-                    p = tf.paragraphs[0]
-                    p.text = quote_text
-                    p.font.name = self.brand.fonts.body
-                    p.font.size = Pt(24)
-                    p.font.italic = True
-                    body_filled = True
+            self._fill_template_placeholders(slide, modified_content, 'content')
 
             if content.speaker_notes:
                 slide.notes_slide.notes_text_frame.text = content.speaker_notes
@@ -1266,32 +1257,23 @@ class PptxGenerator:
             # Use template content layout for stats
             slide = self._create_slide_from_layout('content')
 
-            # Fill placeholders
-            title_filled = False
-            body_filled = False
-            for ph in slide.placeholders:
-                idx = ph.placeholder_format.idx
-                ph_type = str(ph.placeholder_format.type)
+            # Format stats as bullets
+            stats_bullets = []
+            for stat in stats_data[:4]:
+                value = stat.value if isinstance(stat, Stat) else str(stat.get('value', ''))
+                label = stat.label if isinstance(stat, Stat) else str(stat.get('label', ''))
+                stats_bullets.append(f"{value} — {label}")
 
-                if not title_filled and ('TITLE' in ph_type or idx <= 2):
-                    ph.text_frame.paragraphs[0].text = content.title
-                    ph.text_frame.paragraphs[0].font.name = self.brand.fonts.heading
-                    title_filled = True
-                elif not body_filled and 'BODY' in ph_type and idx > 2:
-                    tf = ph.text_frame
-                    tf.clear()
-                    # Format stats as text since we can't add colored cards
-                    for i, stat in enumerate(stats_data[:4]):
-                        if i == 0:
-                            p = tf.paragraphs[0]
-                        else:
-                            p = tf.add_paragraph()
-                        value = stat.value if isinstance(stat, Stat) else str(stat.get('value', ''))
-                        label = stat.label if isinstance(stat, Stat) else str(stat.get('label', ''))
-                        p.text = f"{value} — {label}"
-                        p.font.name = self.brand.fonts.body
-                        p.font.size = Pt(24)
-                    body_filled = True
+            # Create modified content with stats as bullets
+            modified_content = SlideContent(
+                layout=content.layout,
+                title=content.title,
+                bullets=stats_bullets if stats_bullets else content.bullets,
+                speaker_notes=content.speaker_notes,
+                image_category=content.image_category,
+            )
+
+            self._fill_template_placeholders(slide, modified_content, 'content')
 
             if content.speaker_notes:
                 slide.notes_slide.notes_text_frame.text = content.speaker_notes
@@ -1399,21 +1381,15 @@ class PptxGenerator:
             # Use template's title layout for thank you slide
             slide = self._create_slide_from_layout('title')
 
-            # Fill placeholders
-            title_filled = False
-            for ph in slide.placeholders:
-                idx = ph.placeholder_format.idx
-                ph_type = str(ph.placeholder_format.type)
+            # Create content with subtitle as contact info
+            modified_content = SlideContent(
+                layout=content.layout,
+                title=content.title or "Thank You",
+                subtitle=content.body_text or content.subtitle,
+                speaker_notes=content.speaker_notes,
+            )
 
-                if not title_filled and ('TITLE' in ph_type or idx <= 1):
-                    ph.text_frame.paragraphs[0].text = content.title or "Thank You"
-                    ph.text_frame.paragraphs[0].font.name = self.brand.fonts.heading
-                    title_filled = True
-                elif 'SUBTITLE' in ph_type or (title_filled and idx <= 2):
-                    contact_text = content.body_text or content.subtitle or ""
-                    if contact_text:
-                        ph.text_frame.paragraphs[0].text = contact_text
-                        ph.text_frame.paragraphs[0].font.name = self.brand.fonts.body
+            self._fill_template_placeholders(slide, modified_content, 'title')
 
             if content.speaker_notes:
                 slide.notes_slide.notes_text_frame.text = content.speaker_notes
